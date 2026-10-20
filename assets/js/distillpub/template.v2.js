@@ -151,7 +151,7 @@
       //    'url': 'http://distill.pub',
       //    'doi': '10.23915/distill',
       //    'publisherName': 'Distill Working Group',
-      //    'publisherEmail': 'email-removed',
+      //    'publisherEmail': 'admin@distill.pub',
       //    'issn': '2476-0757',
       //    'editors': [...],
       //    'committee': [...]

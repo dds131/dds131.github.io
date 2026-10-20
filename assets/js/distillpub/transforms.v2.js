@@ -157,7 +157,7 @@
       //    'url': 'http://distill.pub',
       //    'doi': '10.23915/distill',
       //    'publisherName': 'Distill Working Group',
-      //    'publisherEmail': 'email-removed',
+      //    'publisherEmail': 'admin@distill.pub',
       //    'issn': '2476-0757',
       //    'editors': [...],
       //    'committee': [...]
@@ -1695,7 +1695,7 @@
           23: [
             function (require, module, exports) {
               var $export = require("./_export");
-              // ip-address-removed / ip-address-removed Object.defineProperty(O, P, Attributes)
+              // 19.1.2.4 / 15.2.3.6 Object.defineProperty(O, P, Attributes)
               $export($export.S + $export.F * !require("./_descriptors"), "Object", { defineProperty: require("./_object-dp").f });
             },
             {

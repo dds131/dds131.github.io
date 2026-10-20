@@ -1,0 +1,584 @@
+<!DOCTYPE html> <html lang="zh-CN"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <title> 面试量化 · RTC 插值、滤波与轨迹平滑 | DDS </title> <meta name="author" content="DDS "> <meta name="description" content="RTC 生成、30 到 110 Hz 插值、安全平滑、EMA 低通和离线连续性指标"> <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作"> <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;"> <style>
+  :root {
+    --max-content-width: 930px;
+  }
+</style> <link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous"> <link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap"> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light"> <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;"> <link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711"> <link rel="canonical" href="https://dds131.github.io/projects/interview-guide/openpi-rtc-dagger-rm75/trajectory-smoothing/"> <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark"> <script>
+    initTheme();
+  </script> </head> <body class="fixed-top-nav "> <header> <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation"> <div class="container"> <a class="navbar-brand title font-weight-lighter" href="/"> <span class="font-weight-bold">DDS</span> </a> <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar top-bar"></span> <span class="icon-bar middle-bar"></span> <span class="icon-bar bottom-bar"></span> </button> <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav"> <ul class="navbar-nav navbar-menu-list flex-nowrap"> <li class="nav-item "> <a class="nav-link" href="/">关于 </a> </li> <li class="nav-item "> <a class="nav-link" href="/blog/">blog </a> </li> <li class="nav-item "> <a class="nav-link" href="/publications/">publications </a> </li> <li class="nav-item active"> <a class="nav-link" href="/projects/">projects <span class="sr-only">(current)</span> </a> </li> <li class="nav-item "> <a class="nav-link" href="/repositories/">repositories </a> </li> <li class="nav-item "> <a class="nav-link" href="/cv/">CV </a> </li> <li class="nav-item "> <a class="nav-link" href="/teaching/">teaching </a> </li> <li class="nav-item "> <a class="nav-link" href="/people/">people </a> </li> <li class="nav-item dropdown "> <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus </a> <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown"> <a class="dropdown-item " href="/books/">bookshelf</a> <div class="dropdown-divider"></div> <a class="dropdown-item " href="/blog/">blog</a> </div> </li> <li class="nav-item "> <a class="nav-link" href="/knowledge/">knowledge </a> </li> <li class="nav-item"> <button id="search-toggle" type="button" title="Search" aria-label="Open search"> <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span> </button> </li> <li class="toggle-container"> <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme"> <i class="fa-half-sun-moon" id="light-toggle-system"></i> <i class="fa-solid fa-moon" id="light-toggle-dark"></i> <i class="fa-solid fa-sun" id="light-toggle-light"></i> </button> </li> </ul> </div> </div> </nav> <progress id="progress" value="0"> <div class="progress-container"> <span class="progress-bar"></span> </div> </progress> </header> <div class="container mt-5" role="main"> <div class="row"> <div class="col-sm-3"> <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth=""></nav> </div> <div class="col-sm-9"> <div class="post"> <header class="post-header"> <h1 class="post-title">面试量化 · RTC 插值、滤波与轨迹平滑</h1> <p class="post-description">RTC 生成、30 到 110 Hz 插值、安全平滑、EMA 低通和离线连续性指标</p> </header> <article> <style>
+.ivq-nav{display:flex;flex-wrap:wrap;gap:.42rem;align-items:center;margin:0 0 1.2rem;padding:.68rem .82rem;border:1px solid var(--global-divider-color);border-radius:10px;font-size:.8rem}
+.ivq-nav a{text-decoration:none}.ivq-nav .sep{opacity:.35}
+.ivq-hero{margin:.65rem 0 1.3rem;padding:1.15rem 1.25rem;border:1px solid var(--global-divider-color);border-radius:15px;background:linear-gradient(135deg,color-mix(in srgb,var(--global-theme-color) 11%,transparent),transparent)}
+.ivq-hero .eyebrow,.ivq-badge{font-size:.69rem;font-weight:800;letter-spacing:.08em;color:var(--global-theme-color)}
+.ivq-hero h2{font-size:1.35rem;margin:.28rem 0 .42rem}.ivq-hero p{margin:0;line-height:1.72}
+.ivq-kpi,.ivq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.68rem;margin:1rem 0 1.35rem}
+.ivq-kpi>div,.ivq-grid>div{padding:.78rem .88rem;border:1px solid var(--global-divider-color);border-radius:10px;line-height:1.58}
+.ivq-kpi b,.ivq-grid b{display:block;color:var(--global-theme-color);margin-bottom:.16rem}.ivq-kpi span{font-size:.75rem;opacity:.76}
+.ivq-table{overflow-x:auto}.ivq-table table{min-width:720px}.ivq-table td,.ivq-table th{vertical-align:top}
+.ivq-call{margin:1rem 0;padding:.82rem .95rem;border-left:4px solid var(--global-theme-color);background:color-mix(in srgb,var(--global-theme-color) 7%,transparent);border-radius:0 9px 9px 0;line-height:1.68}
+.ivq-warn{border-left-color:#c47a25;background:color-mix(in srgb,#c47a25 8%,transparent)}
+.ivq-code{overflow-x:auto;margin:.85rem 0 1rem;padding:.85rem .95rem;border:1px solid var(--global-divider-color);border-radius:10px;background:color-mix(in srgb,var(--global-divider-color) 8%,transparent)}
+.ivq-code pre{margin:0;white-space:pre;line-height:1.52}.ivq-code code{font-size:.78rem}
+.ivq-proof{display:inline-block;padding:.12rem .42rem;margin-right:.25rem;border:1px solid var(--global-theme-color);border-radius:999px;color:var(--global-theme-color);font-size:.68rem;font-weight:700}
+.ivq-next{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.65rem;margin:1.1rem 0}.ivq-next a{display:block;padding:.75rem .85rem;border:1px solid var(--global-divider-color);border-radius:9px;text-decoration:none}
+@media(max-width:700px){.ivq-table table{min-width:650px}}
+</style> <div class="ivq-nav"> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/">项目主线</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/runtime-metrics/">运行量化</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/commands-parameters/">命令参数</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/trajectory-smoothing/">轨迹与平滑</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/data-training/">数据与训练</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/engineering-problems/">工程问题</a><span class="sep">·</span> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/interview-qa/">面试问答</a><span class="sep">·</span> <a href="/projects/openpi-rtc-dagger-rm75/">原项目记录</a> </div> <div class="ivq-hero"> <span class="eyebrow">QUANTITATIVE DEEP DIVE · TRAJECTORY</span> <h2>可见的“更顺”来自四层处理，不是一个平滑开关</h2> <p>RTC 在模型生成阶段处理已承诺前缀；插值器连接 30 Hz 与 110 Hz 时间轴；安全链限制真实下发；可选 EMA 低通抑制高频毛刺。四层作用位置和延迟语义必须分开。</p> </div> <div class="ivq-kpi"> <div> <b>50 × 8</b><span>模型动作块</span> </div> <div> <b>30 → 110 Hz</b><span>关节线性插值</span> </div> <div> <b>{0, 0.5, 1}</b><span>夹爪三档吸附</span> </div> <div> <b>fc=5 Hz</b><span>离线 LPF 配置</span> </div> <div> <b>262 → 113</b><span>指令加速度 RMS</span> </div> <div> <b>约 55 ms</b><span>双级低通估算群延迟</span> </div> </div> <h2 id="一四层轨迹处理链">一、四层轨迹处理链</h2> <div class="ivq-table"> <table> <thead> <tr> <th>层</th> <th>输入与输出</th> <th>核心逻辑</th> <th>主要解决</th> <th>不负责什么</th> </tr> </thead> <tbody> <tr> <td>RTC 生成层</td> <td>旧块尾部、当前状态 → 新 50×8 动作块</td> <td>冻结已承诺前缀，以 soft mask 和 guided flow 约束重叠区</td> <td>推理延迟下的新旧计划一致性</td> <td>硬件限速、碰撞规划</td> </tr> <tr> <td>时间插值层</td> <td>30 Hz 路点 → 110 Hz 参考</td> <td>7 关节线性插值；夹爪最近路点三档吸附</td> <td>时间采样率匹配</td> <td>修正模型语义错误</td> </tr> <tr> <td>状态化安全层</td> <td>候选参考 → 安全命令</td> <td>EMA、同比例限速、软限位、接近刹车、同比例限加速度、硬裁剪</td> <td>执行约束和连续下发</td> <td>让策略理解失败</td> </tr> <tr> <td>可选输出低通</td> <td>安全关节命令 → 滤后关节命令</td> <td>7 关节单/双级 EMA；夹爪不滤</td> <td>高频毛刺</td> <td>RTC 前缀时间轴</td> </tr> </tbody> </table> </div> <h2 id="二30-hz-到-110-hz-怎样插值">二、30 Hz 到 110 Hz 怎样插值</h2> <p><span class="ivq-proof">源码确认</span> 对相邻 30 Hz 关节路点 (q_i,q_{i+1})，110 Hz 发送时刻按照所在时间区间计算线性权重：</p> <p>[ q(t)=(1-\alpha)q_i+\alpha q_{i+1},\qquad \alpha=\frac{t-t_i}{t_{i+1}-t_i}. ]</p> <p>110/30 不是整数，因此不能固定地在每两个路点间插入同样数量的帧；实现按时间位置取样，避免长期相位漂移。夹爪不是连续关节轨迹：它取最近策略路点，再吸附到 <code>{0, 0.5, 1}</code>，不对开、保持、闭三种命令做连续混合。</p> <div class="ivq-call ivq-warn"> <b>常见误区：</b>“30 Hz 模型、110 Hz 下发”不等于每个模型点复制 3 或 4 次。固定插帧会因为 110/30 非整数而累计时间误差。</div> <h2 id="三安全平滑的执行顺序">三、安全平滑的执行顺序</h2> <p><span class="ivq-proof">源码确认</span></p> <ol> <li>对候选关节目标做状态化 EMA；</li> <li>计算各关节速度限制，使用一个共同缩放因子同比例缩放；</li> <li>接近软限位时提前刹车；</li> <li>接近目标时降低速度，避免过冲；</li> <li>对加速度变化再次使用共同缩放因子；</li> <li>最后执行硬关节限位裁剪；</li> <li>通过唯一发送点写入机器人。</li> </ol> <p>共同缩放因子保持关节空间运动方向；若每个关节独立裁剪，会改变多关节协同轨迹的方向。安全链处理的是“实际允许怎样下发”，RTC 处理的是“新动作块怎样生成并承接旧计划”，二者互补但不等价。</p> <h2 id="四ema-输出低通逻辑">四、EMA 输出低通逻辑</h2> <p>单级 EMA 系数按照采样率 (f_s) 和截止频率 (f_c) 计算：</p> <p>[ a=1-e^{-2\pi f_c/f_s},\qquad y_t=a x_t+(1-a)y_{t-1}. ]</p> <p><code>lpf_order=2</code> 表示串联两级 EMA。截止频率越低、阶数越高，高频抑制越强，但群延迟也更大。夹爪保持离散命令，不经过关节低通。</p> <p><span class="ivq-proof">离线复算</span> <code>fc=5 Hz</code> 的 ss1.0 记录结果：</p> <div class="ivq-table"> <table> <thead> <tr> <th>指标</th> <th style="text-align: right">滤波前</th> <th style="text-align: right">滤波后 / 保留</th> <th>解释</th> </tr> </thead> <tbody> <tr> <td>指令加速度 RMS</td> <td style="text-align: right">262</td> <td style="text-align: right">113</td> <td>高频变化明显降低</td> </tr> <tr> <td>换向次数</td> <td style="text-align: right">9.5 次/s</td> <td style="text-align: right">3.9 次/s</td> <td>命令方向抖动减少</td> </tr> <tr> <td>1.5 Hz 以下主运动</td> <td style="text-align: right">—</td> <td style="text-align: right">99.8%</td> <td>低频主体基本保留</td> </tr> <tr> <td>估算群延迟</td> <td style="text-align: right">—</td> <td style="text-align: right">约 55 ms</td> <td>平滑代价，不属于 RTC 推理延迟</td> </tr> <tr> <td>3–6 Hz 残留主体位置幅值</td> <td style="text-align: right">—</td> <td style="text-align: right">约下降 7%</td> <td>LPF 对中频主体作用有限</td> </tr> </tbody> </table> </div> <p>这些是离线命令频谱和统计结果，不是任务成功率，也不应把数值量纲不明的 RMS 改写成物理加速度单位。</p> <h2 id="五rtc-离线连续性对照">五、RTC 离线连续性对照</h2> <p><span class="ivq-proof">离线复算</span> checkpoint 060000 在同一样本、同一噪声下保存了两个 seed 的 RTC/no-RTC 输出：</p> <div class="ivq-table"> <table> <thead> <tr> <th style="text-align: right">Seed</th> <th style="text-align: right">frozen-prefix MAE：RTC / no-RTC</th> <th style="text-align: right">降低</th> <th style="text-align: right">模型空间二阶差分：RTC / no-RTC</th> <th style="text-align: right">降低</th> </tr> </thead> <tbody> <tr> <td style="text-align: right">42</td> <td style="text-align: right">0.001814 / 0.023995</td> <td style="text-align: right">92.44%</td> <td style="text-align: right">0.024429 / 0.028038</td> <td style="text-align: right">12.87%</td> </tr> <tr> <td style="text-align: right">123</td> <td style="text-align: right">0.000474 / 0.006189</td> <td style="text-align: right">92.34%</td> <td style="text-align: right">0.021939 / 0.025196</td> <td style="text-align: right">12.93%</td> </tr> </tbody> </table> </div> <p>二阶差分没有按时间尺度换算，因此不是物理 jerk；两个 seed 也不能替代多 trial 真机 A/B。单次推理耗时在两个 seed 上方向相反，所以页面不声称 RTC 一定更快或更慢。</p> <h2 id="六轨迹优化到底是什么">六、轨迹“优化”到底是什么</h2> <p>本项目可验证的是一条分层轨迹处理链：</p> <blockquote> <p>模型空间前缀约束 → 30/110 Hz 时间重采样 → 状态化运动约束 → 可选输出低通</p> </blockquote> <p>它不是在线求解全局最短路径、碰撞距离、接触力或能耗的最优控制器。准确表述是“轨迹连续性和安全下发优化”，而不是“全局轨迹最优”。</p> <h2 id="七参数优化顺序">七、参数优化顺序</h2> <ol> <li>锁定 checkpoint、30 Hz 动作语义和 50 步块长；</li> <li>关闭额外 LPF，验证 RTC 前缀索引、拒块和队列行为；</li> <li>在同输入离线扫描 horizon、guidance 和 schedule；</li> <li>用真实控制日志确认 110 Hz 周期没有被记录或 I/O 干扰；</li> <li>再扫描 <code>lpf_fc</code> 与阶数，记录平滑改善和群延迟；</li> <li>最后做基线、仅 RTC、仅执行侧平滑、二者组合四组 A/B。</li> </ol> <div class="ivq-call"> <b>面试一句话：</b>RTC 不是客户端事后平均；它在模型生成时约束前缀。客户端再把 30 Hz 关节路点按时间线性插值到 110 Hz，经安全链和可选双级 EMA 下发，夹爪则保持离散三档。</div> <div class="ivq-next"> <a href="/projects/interview-guide/openpi-rtc-dagger-rm75/data-training/"><b>下一页：数据与训练 →</b><br>转换吞吐、训练耗时与训练轮次口径。</a> <a href="/projects/openpi-rtc-dagger-rm75/architecture/"><b>原项目架构页 →</b><br>查看完整四层源码地图与 A/B 边界。</a> </div> </article> </div> </div> </div> </div> <footer class="fixed-bottom" role="contentinfo"> <div class="container mt-0"> © Copyright 2026 DDS . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>. </div> </footer> <script>
+  window.alFolio = {
+    compatBootstrap: false
+  };
+</script> <script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script> <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script> <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script> <script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script> <script src="/assets/al_math/js/mathjax-setup.js"></script> <script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script> <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script> <script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script> <script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script> <script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script> <script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script> <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script> <script async src="https://badge.dimensions.ai/badge.js"></script> <script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script> <script defer src="/assets/al_img_tools/js/zoom.js"></script> <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script> <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script> <script>
+    addBackToTop();
+  </script> <script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script> <ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys> <script src="/assets/al_search/js/search-setup.js"></script> <script>
+// get the ninja-keys element
+const ninja = document.querySelector('ninja-keys');
+
+// add the home and posts menu items
+ninja.data = [{
+    id: "nav-关于",
+    title: "关于",
+    section: "Navigation",
+    handler: () => {
+      window.location.href = "/";
+    },
+  },{id: "nav-blog",
+          title: "blog",
+          description: "",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/blog/";
+          },
+        },{id: "nav-publications",
+          title: "publications",
+          description: "publications by categories in reversed chronological order. generated by jekyll-scholar.",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/publications/";
+          },
+        },{id: "nav-projects",
+          title: "projects",
+          description: "机器人与具身智能方向的实践项目。",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/projects/";
+          },
+        },{id: "nav-repositories",
+          title: "repositories",
+          description: "Edit the `_data/repositories.yml` and change the `github_users` and `github_repos` lists to include your own GitHub profile and repositories.",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/repositories/";
+          },
+        },{id: "nav-cv",
+          title: "CV",
+          description: "This is a description of the page. You can modify it in '_pages/cv.md'. You can also change or remove the top pdf download button.",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/cv/";
+          },
+        },{id: "nav-teaching",
+          title: "teaching",
+          description: "Course materials, schedules, and resources for classes taught.",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/teaching/";
+          },
+        },{id: "nav-people",
+          title: "people",
+          description: "members of the lab or group",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/people/";
+          },
+        },{id: "dropdown-bookshelf",
+              title: "bookshelf",
+              description: "",
+              section: "Dropdown",
+              handler: () => {
+                window.location.href = "/books/";
+              },
+            },{id: "dropdown-blog",
+              title: "blog",
+              description: "",
+              section: "Dropdown",
+              handler: () => {
+                window.location.href = "/blog/";
+              },
+            },{id: "nav-knowledge",
+          title: "knowledge",
+          description: "具身智能学习笔记——深度学习基础、模仿学习与 VLA、强化学习经典算法、Docker 工程环境四条主线",
+          section: "Navigation",
+          handler: () => {
+            window.location.href = "/knowledge/";
+          },
+        },{id: "post-a-post-with-plotly-js",
+        
+          title: "a post with plotly.js",
+        
+        description: "this is what included plotly.js code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2025/plotly/";
+          
+        },
+      },{id: "post-a-post-with-image-galleries",
+        
+          title: "a post with image galleries",
+        
+        description: "this is what included image galleries could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/photo-gallery/";
+          
+        },
+      },{id: "post-a-post-with-tabs",
+        
+          title: "a post with tabs",
+        
+        description: "this is what included tabs in a post could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/tabs/";
+          
+        },
+      },{id: "post-a-post-with-typograms",
+        
+          title: "a post with typograms",
+        
+        description: "this is what included typograms code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/typograms/";
+          
+        },
+      },{id: "post-a-post-that-can-be-cited",
+        
+          title: "a post that can be cited",
+        
+        description: "this is what a post that can be cited looks like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/post-citation/";
+          
+        },
+      },{id: "post-a-post-with-pseudo-code",
+        
+          title: "a post with pseudo code",
+        
+        description: "this is what included pseudo code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/pseudocode/";
+          
+        },
+      },{id: "post-a-post-with-code-diff",
+        
+          title: "a post with code diff",
+        
+        description: "this is how you can display code diffs",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/code-diff/";
+          
+        },
+      },{id: "post-a-post-with-advanced-image-components",
+        
+          title: "a post with advanced image components",
+        
+        description: "this is what advanced image components could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/advanced-images/";
+          
+        },
+      },{id: "post-a-post-with-vega-lite",
+        
+          title: "a post with vega lite",
+        
+        description: "this is what included vega lite code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/vega-lite/";
+          
+        },
+      },{id: "post-a-post-with-geojson",
+        
+          title: "a post with geojson",
+        
+        description: "this is what included geojson code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/geojson-map/";
+          
+        },
+      },{id: "post-a-post-with-echarts",
+        
+          title: "a post with echarts",
+        
+        description: "this is what included echarts code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/echarts/";
+          
+        },
+      },{id: "post-a-post-with-chart-js",
+        
+          title: "a post with chart.js",
+        
+        description: "this is what included chart.js code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2024/chartjs/";
+          
+        },
+      },{id: "post-a-post-with-tikzjax",
+        
+          title: "a post with TikZJax",
+        
+        description: "this is what included TikZ code could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/tikzjax/";
+          
+        },
+      },{id: "post-a-post-with-bibliography",
+        
+          title: "a post with bibliography",
+        
+        description: "an example of a blog post with bibliography",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/post-bibliography/";
+          
+        },
+      },{id: "post-a-post-with-jupyter-notebook",
+        
+          title: "a post with jupyter notebook",
+        
+        description: "an example of a blog post with jupyter notebook",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/jupyter-notebook/";
+          
+        },
+      },{id: "post-a-post-with-custom-blockquotes",
+        
+          title: "a post with custom blockquotes",
+        
+        description: "an example of a blog post with custom blockquotes",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/custom-blockquotes/";
+          
+        },
+      },{id: "post-a-post-with-table-of-contents-on-a-sidebar",
+        
+          title: "a post with table of contents on a sidebar",
+        
+        description: "an example of a blog post with table of contents on a sidebar",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/sidebar-table-of-contents/";
+          
+        },
+      },{id: "post-a-post-with-audios",
+        
+          title: "a post with audios",
+        
+        description: "this is what included audios could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/audios/";
+          
+        },
+      },{id: "post-a-post-with-videos",
+        
+          title: "a post with videos",
+        
+        description: "this is what included videos could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/videos/";
+          
+        },
+      },{id: "post-displaying-beautiful-interactive-tables",
+        
+          title: "displaying beautiful interactive tables",
+        
+        description: "an example of how to use interactive tables in al-folio",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/tables/";
+          
+        },
+      },{id: "post-a-post-with-table-of-contents",
+        
+          title: "a post with table of contents",
+        
+        description: "an example of a blog post with table of contents",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2023/table-of-contents/";
+          
+        },
+      },{id: "post-a-post-with-giscus-comments",
+        
+          title: "a post with giscus comments",
+        
+        description: "an example of a blog post with giscus comments",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2022/giscus-comments/";
+          
+        },
+      },{id: "post-a-post-with-redirect",
+        
+          title: "a post with redirect",
+        
+        description: "you can also redirect to assets like pdf",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/assets/pdf/example_pdf.pdf";
+          
+        },
+      },{id: "post-a-post-with-diagrams",
+        
+          title: "a post with diagrams",
+        
+        description: "an example of a blog post with diagrams",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2021/diagrams/";
+          
+        },
+      },{id: "post-a-distill-style-blog-post",
+        
+          title: "a distill-style blog post",
+        
+        description: "an example of a distill-style blog post and main elements",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2021/distill/";
+          
+        },
+      },{id: "post-a-post-with-twitter",
+        
+          title: "a post with twitter",
+        
+        description: "an example of a blog post with twitter",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2020/twitter/";
+          
+        },
+      },{id: "post-a-post-with-disqus-comments",
+        
+          title: "a post with disqus comments",
+        
+        description: "an example of a blog post with disqus comments",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2015/disqus-comments/";
+          
+        },
+      },{id: "post-a-post-with-math",
+        
+          title: "a post with math",
+        
+        description: "an example of a blog post with some math",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2015/math/";
+          
+        },
+      },{id: "post-a-post-with-code",
+        
+          title: "a post with code",
+        
+        description: "an example of a blog post with some code",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2015/code/";
+          
+        },
+      },{id: "post-a-post-with-images",
+        
+          title: "a post with images",
+        
+        description: "this is what included images could look like",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2015/images/";
+          
+        },
+      },{id: "post-a-post-with-formatting-and-links",
+        
+          title: "a post with formatting and links",
+        
+        description: "march & april, looking forward to summer",
+        section: "Posts",
+        handler: () => {
+          
+            window.location.href = "/blog/2015/formatting-and-links/";
+          
+        },
+      },{id: "books-the-godfather",
+          title: 'The Godfather',
+          description: "",
+          section: "Books",handler: () => {
+              window.location.href = "/books/the_godfather/";
+            },},{id: "news-a-simple-inline-announcement",
+          title: 'A simple inline announcement.',
+          description: "",
+          section: "News",},{id: "news-a-long-announcement-with-details",
+          title: 'A long announcement with details',
+          description: "",
+          section: "News",handler: () => {
+              window.location.href = "/news/announcement_2/";
+            },},{id: "news-a-simple-inline-announcement-with-markdown-emoji-sparkles-smile",
+          title: 'A simple inline announcement with Markdown emoji! <img class="emoji" title=":sparkles:" alt=":sparkles:" src="https://github.githubassets.com/images/icons/emoji/unicode/2728.png" height="20" width="20"> <img class="emoji" title=":smile:" alt=":smile:" src="https://github.githubassets.com/images/icons/emoji/unicode/1f604.png" height="20" width="20">',
+          description: "",
+          section: "News",},{id: "projects-项目面试介绍总览",
+          title: '项目面试介绍总览',
+          description: "六个机器人与具身智能项目的面试介绍入口，按机械臂闭环与四足感知控制两条主线组织",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/interview-guide/";
+            },},{id: "projects-openpi-rlt-rm75-实机在线强化学习",
+          title: 'openpi-RLT：RM75 实机在线强化学习',
+          description: "π0.5、RL Token 与轻量 Actor-Critic 的三阶段实机闭环；完整记录数据闸、在线训练、工程修复，以及成功率未提升的证据化复盘",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/openpi-rlt-rm75/";
+            },},{id: "projects-openpi-rtc-dagger-rm75-人在回路闭环",
+          title: 'OpenPI RTC + DAgger：RM75 人在回路闭环',
+          description: "RTC 异步执行、VR 人工门控、纠正数据与训练回传的 RM75 闭环设计、证据状态和验证路线",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/openpi-rtc-dagger-rm75/";
+            },},{id: "projects-四足机器狗雷达感知与强化学习运动控制",
+          title: '四足机器狗雷达感知与强化学习运动控制',
+          description: "宇树 Go2 · 激光雷达高程图与环状距离图双通道感知 · 端到端强化学习极限跑酷 · 8100 次独立测试 99.4% 通过",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/quadruped-lidar-rl/";
+            },},{id: "projects-四足机器狗单目-rgb-感知与强化学习运动控制",
+          title: '四足机器狗单目 RGB 感知与强化学习运动控制',
+          description: "宇树 Go2 · 单目 RGB 相机取代激光雷达 · 冻结深度基础模型与自监督几何重建 · 九类跑酷地形端到端强化学习",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/quadruped-rgb-rl/";
+            },},{id: "projects-vla-视觉-语言-动作模型训练与真机部署",
+          title: 'VLA 视觉-语言-动作模型训练与真机部署',
+          description: "openpi 0.5 · RM75-B 七自由度机械臂 · 859,154 帧三相机示范数据 · 全参后训练 · 文档汇总真机成功率 92% · 动作块间 C² 轨迹融合",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/vla-openpi05-rm75/";
+            },},{id: "projects-vr-遥操作机械臂与示教数据采集",
+          title: 'VR 遥操作机械臂与示教数据采集',
+          description: "面向智能建造焊接作业的具身智能系统——高频安全 VR 遥操作、多模态专家数据采集、失败恢复数据闭环",
+          section: "Projects",handler: () => {
+              window.location.href = "/projects/vr-teleop-rm75/";
+            },},{id: "teachings-data-science-fundamentals",
+          title: 'Data Science Fundamentals',
+          description: "This course covers the foundational aspects of data science, including data collection, cleaning, analysis, and visualization. Students will learn practical skills for working with real-world datasets.",
+          section: "Teachings",handler: () => {
+              window.location.href = "/teachings/data-science-fundamentals/";
+            },},{id: "teachings-introduction-to-machine-learning",
+          title: 'Introduction to Machine Learning',
+          description: "This course provides an introduction to machine learning concepts, algorithms, and applications. Students will learn about supervised and unsupervised learning, model evaluation, and practical implementations.",
+          section: "Teachings",handler: () => {
+              window.location.href = "/teachings/introduction-to-machine-learning/";
+            },},{
+        id: 'social-cv',
+        title: 'CV',
+        section: 'Socials',
+        handler: () => {
+          window.open("/assets/pdf/example_pdf.pdf", "_blank");
+        },
+      },{
+        id: 'social-email',
+        title: 'email',
+        section: 'Socials',
+        handler: () => {
+          window.open("mailto:%79%6F%75@%65%78%61%6D%70%6C%65.%63%6F%6D", "_blank");
+        },
+      },{
+        id: 'social-inspire',
+        title: 'Inspire HEP',
+        section: 'Socials',
+        handler: () => {
+          window.open("https://inspirehep.net/authors/1010907", "_blank");
+        },
+      },{
+        id: 'social-rss',
+        title: 'RSS Feed',
+        section: 'Socials',
+        handler: () => {
+          window.open("/feed.xml", "_blank");
+        },
+      },{
+        id: 'social-scholar',
+        title: 'Google Scholar',
+        section: 'Socials',
+        handler: () => {
+          window.open("https://scholar.google.com/citations?user=qc6CJjYAAAAJ", "_blank");
+        },
+      },{
+        id: 'social-custom_social',
+        title: 'Custom_social',
+        section: 'Socials',
+        handler: () => {
+          window.open("https://www.alberteinstein.com/", "_blank");
+        },
+      },{
+      id: 'light-theme',
+      title: 'Change theme to light',
+      description: 'Change the theme of the site to Light',
+      section: 'Theme',
+      handler: () => {
+        setThemeSetting("light");
+      },
+    },
+    {
+      id: 'dark-theme',
+      title: 'Change theme to dark',
+      description: 'Change the theme of the site to Dark',
+      section: 'Theme',
+      handler: () => {
+        setThemeSetting("dark");
+      },
+    },
+    {
+      id: 'system-theme',
+      title: 'Use system default theme',
+      description: 'Change the theme of the site to System Default',
+      section: 'Theme',
+      handler: () => {
+        setThemeSetting("system");
+      },
+    },];
+
+</script> <script src="/assets/al_search/js/shortcut-key.js"></script> </body> </html>

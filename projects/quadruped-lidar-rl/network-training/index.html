@@ -1,10 +1,1169 @@
-<!DOCTYPE html> <html lang="zh-CN"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <title> 网络结构与训练细节 | DDS </title> <meta name="author" content="DDS "> <meta name="description" content="两个 Actor 变体的逐模块维度与激活值域、三处零初始化、四个自监督重建头、梯度回传路径与梯度饥饿、五个独立优化器、损失函数完整组成与训练超参总表"> <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作"> <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;"> <style>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <!-- Head -->
+  <head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <!-- Metadata, OpenGraph and Schema.org -->
+
+
+
+
+<!-- Standard metadata -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>
+  
+  
+    
+      网络结构与训练细节 | DDS 
+    
+  
+</title>
+<meta name="author" content="DDS ">
+<meta name="description" content="两个 Actor 变体的逐模块维度与激活值域、三处零初始化、四个自监督重建头、梯度回传路径与梯度饥饿、五个独立优化器、损失函数完整组成与训练超参总表">
+
+  <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作">
+
+
+
+
+
+
+
+
+
+
+<!-- Security: Content Security Policy -->
+<!-- Permissive CSP suitable for academic websites. Allows external images, videos, and common embed services. -->
+<!-- To customize for your needs, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;">
+<style>
   :root {
     --max-content-width: 930px;
   }
-</style> <link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous"> <link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap"> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light"> <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;"> <link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711"> <link rel="canonical" href="https://dds131.github.io/projects/quadruped-lidar-rl/network-training/"> <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark"> <script>
+</style>
+
+<!-- Tailwind-first core styles -->
+<link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62">
+
+
+
+
+
+
+  <!-- Tocbot -->
+  <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous">
+
+
+<!-- Icons -->
+
+  
+<!-- Font Awesome -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous">
+
+<!-- Academicons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous">
+
+<!-- Scholar Icons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous">
+
+
+
+<link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap">
+
+<!-- Code Syntax Highlighting -->
+<link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light">
+
+<!-- Styles -->
+
+
+
+
+  <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+
+<link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711">
+
+<link rel="canonical" href="https://dds131.github.io/projects/quadruped-lidar-rl/network-training/">
+
+
+  <!-- Dark Mode -->
+  <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script>
+  <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark">
+  <script>
     initTheme();
-  </script> </head> <body class="fixed-top-nav "> <header> <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation"> <div class="container"> <a class="navbar-brand title font-weight-lighter" href="/"> <span class="font-weight-bold">DDS</span> </a> <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar top-bar"></span> <span class="icon-bar middle-bar"></span> <span class="icon-bar bottom-bar"></span> </button> <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav"> <ul class="navbar-nav navbar-menu-list flex-nowrap"> <li class="nav-item "> <a class="nav-link" href="/">关于 </a> </li> <li class="nav-item "> <a class="nav-link" href="/blog/">blog </a> </li> <li class="nav-item "> <a class="nav-link" href="/publications/">publications </a> </li> <li class="nav-item active"> <a class="nav-link" href="/projects/">projects <span class="sr-only">(current)</span> </a> </li> <li class="nav-item "> <a class="nav-link" href="/repositories/">repositories </a> </li> <li class="nav-item "> <a class="nav-link" href="/cv/">CV </a> </li> <li class="nav-item "> <a class="nav-link" href="/teaching/">teaching </a> </li> <li class="nav-item "> <a class="nav-link" href="/people/">people </a> </li> <li class="nav-item dropdown "> <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus </a> <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown"> <a class="dropdown-item " href="/books/">bookshelf</a> <div class="dropdown-divider"></div> <a class="dropdown-item " href="/blog/">blog</a> </div> </li> <li class="nav-item "> <a class="nav-link" href="/knowledge/">knowledge </a> </li> <li class="nav-item"> <button id="search-toggle" type="button" title="Search" aria-label="Open search"> <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span> </button> </li> <li class="toggle-container"> <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme"> <i class="fa-half-sun-moon" id="light-toggle-system"></i> <i class="fa-solid fa-moon" id="light-toggle-dark"></i> <i class="fa-solid fa-sun" id="light-toggle-light"></i> </button> </li> </ul> </div> </div> </nav> <progress id="progress" value="0"> <div class="progress-container"> <span class="progress-bar"></span> </div> </progress> </header> <div class="container mt-5" role="main"> <div class="row"> <div class="col-sm-3"> <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth=""></nav> </div> <div class="col-sm-9"> <div class="post"> <header class="post-header"> <h1 class="post-title">网络结构与训练细节</h1> <p class="post-description">两个 Actor 变体的逐模块维度与激活值域、三处零初始化、四个自监督重建头、梯度回传路径与梯度饥饿、五个独立优化器、损失函数完整组成与训练超参总表</p> </header> <article> <style>
+  </script>
+
+
+
+
+
+
+
+  <!-- Image Features -->
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+  </head>
+
+  <!-- Body -->
+  <body class="fixed-top-nav ">
+    <!-- Header -->
+    <header>
+  <!-- Nav Bar -->
+  <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation">
+    <div class="container">
+      
+        <a class="navbar-brand title font-weight-lighter" href="/">
+          
+            
+              <span class="font-weight-bold">DDS</span>
+            
+            
+            
+          
+        </a>
+      
+      <!-- Navbar Toggle -->
+      <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar top-bar"></span>
+        <span class="icon-bar middle-bar"></span>
+        <span class="icon-bar bottom-bar"></span>
+      </button>
+
+      <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav">
+        <ul class="navbar-nav navbar-menu-list flex-nowrap">
+          
+
+          <!-- About -->
+          <li class="nav-item ">
+            <a class="nav-link" href="/">关于
+              
+            </a>
+          </li>
+
+          <!-- Other pages -->
+          
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/blog/">blog
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/publications/">publications
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item active">
+                  <a class="nav-link" href="/projects/">projects
+                    
+                      <span class="sr-only">(current)</span>
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/repositories/">repositories
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/cv/">CV
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/teaching/">teaching
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/people/">people
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                
+                <li class="nav-item dropdown ">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus
+                    
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown">
+                    
+                      
+                        <a class="dropdown-item " href="/books/">bookshelf</a>
+                      
+                    
+                      
+                        <div class="dropdown-divider"></div>
+                      
+                    
+                      
+                        <a class="dropdown-item " href="/blog/">blog</a>
+                      
+                    
+                  </div>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/knowledge/">knowledge
+                    
+                  </a>
+                </li>
+              
+            
+          
+          
+            <!-- Search -->
+            <li class="nav-item">
+              <button id="search-toggle" type="button" title="Search" aria-label="Open search">
+                <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span>
+              </button>
+            </li>
+          
+          
+            <!-- Toogle theme mode -->
+            <li class="toggle-container">
+              <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme">
+                <i class="fa-half-sun-moon" id="light-toggle-system"></i>
+                <i class="fa-solid fa-moon" id="light-toggle-dark"></i>
+                <i class="fa-solid fa-sun" id="light-toggle-light"></i>
+              </button>
+            </li>
+          
+        </ul>
+      </div>
+    </div>
+  </nav>
+  
+    <!-- Scrolling Progress Bar -->
+    <progress id="progress" value="0">
+      <div class="progress-container">
+        <span class="progress-bar"></span>
+      </div>
+    </progress>
+  
+</header>
+
+
+    <!-- Content -->
+    <div class="container mt-5" role="main">
+      
+        
+        
+        
+          <div class="row">
+            <!-- sidebar, which will move to the top on a small screen -->
+            <div class="col-sm-3">
+              <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth=""></nav>
+            </div>
+            <!-- main content area -->
+            <div class="col-sm-9">
+
+<div class="post">
+  <header class="post-header">
+    <h1 class="post-title">网络结构与训练细节</h1>
+    <p class="post-description">两个 Actor 变体的逐模块维度与激活值域、三处零初始化、四个自监督重建头、梯度回传路径与梯度饥饿、五个独立优化器、损失函数完整组成与训练超参总表</p>
+  </header>
+
+  <article>
+    
+<style>
 .qrl-nav{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1.2rem 0 2rem;padding:.7rem 1rem;border-radius:8px;border:1px solid var(--global-divider-color,#e3e3e3);font-size:.88rem}
 .qrl-nav .sep{opacity:.35}
 .qrl-nav .cur{font-weight:600;color:var(--global-theme-color,#b509ac)}
@@ -21,36 +1180,1094 @@
 .qrl-video{margin:1.4rem 0}
 .qrl-video video{width:100%;border-radius:8px;display:block;background:#000}
 .qrl-vbar{font-size:.83rem;opacity:.78;padding:.4rem .1rem 0}
-</style> <div class="qrl-nav"> <a href="/projects/quadruped-lidar-rl/">← 项目主页</a> <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a> <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a> <span class="sep">·</span><span class="cur">网络结构与训练细节</span> <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/engineering-log/">工程问题记录</a> <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/results-gallery/">结果与视频画廊</a> </div> <p>本页把策略网络拆到模块一级：每个分支吃进什么、输出多少维、用什么激活、 梯度从哪条路回来、由哪个优化器更新、损失由哪几项加权而成。</p> <p><a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a> 一页讲的是 「用什么算法、按什么目标优化」；本页讲的是「这套算法落到代码里，网络与训练循环具体是什么形状」。 两张感知图本身的构造过程属于 <a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a>。</p> <div class="qrl-note"> 本页描述的是版本主线<strong>第 30 版</strong>（最终版）的网络与训练配置。 文中出现的「从零重训基线」指第 30 版之后另起的一组对照实验： 沿用同一套环境配置与奖励，但不继承任何权重、从随机初始化开始训练， 用于检验哪些设计依赖于热启动。它不属于版本主线，因此不带版本号。 </div> <h2 id="一两个变体结构差异与权重不可互换">一、两个变体：结构差异与权重不可互换</h2> <p>第 30 版同时维护<strong>两个 Actor 变体</strong>。它们<strong>共用一切</strong>——观测、地形、奖励、Critic、PPO 超参 全部相同，唯一的差别是 Actor 如何把「高程图潜变量」与「环状距离图潜变量」送进主干。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>项</th> <th>模型 A（残差式融合）</th> <th>模型 B（并排式融合）</th> </tr> </thead> <tbody> <tr> <td>类名</td> <td><code class="language-plaintext highlighter-rouge">ActorYawLidarRLCplx</code></td> <td><code class="language-plaintext highlighter-rouge">ActorYawLidarRLWide</code></td> </tr> <tr> <td>融合方式</td> <td>残差：<code class="language-plaintext highlighter-rouge">fused = scan_latent + fusion_mlp(lidar_latent)</code> </td> <td>并排：两个潜变量各占独立的列</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">fusion_mlp</code></td> <td>存在（门控层加两层 MLP）</td> <td> <strong>不存在</strong>，直接删除</td> </tr> <tr> <td>主干首层输入维度</td> <td><strong>130</strong></td> <td><strong>162</strong></td> </tr> <tr> <td>首层布局</td> <td>本体 53、fused 32、特权 9、latent 20、yaw 16</td> <td>本体 53、scan 32、ring 32、特权 9、latent 20、yaw 16</td> </tr> <tr> <td>零初始化的位置</td> <td> <code class="language-plaintext highlighter-rouge">fusion_mlp</code> 末层的权重与偏置</td> <td>主干首层中 ring 所占的第 85 至 117 列</td> </tr> <tr> <td>训练起点处的行为</td> <td> <code class="language-plaintext highlighter-rouge">fused</code> 恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code> </td> <td>ring 列的贡献恒为 0</td> </tr> </tbody> </table> </div> <p>两种做法在训练起点处的效果是同一个：<strong>新增的环状图通路初始贡献为零， 主干的输入与「只有高程图」时逐位相同</strong>，因此从上一代权重热启动时不存在冷启动代价。</p> <div class="qrl-key"> <p>两个变体的参数字典形状不同，<strong>权重绝对不可互换</strong>。 录制与评测时若把变体参数传错，加载会直接失败而不是静默错配——这是刻意的设计。</p> <p>本项目<strong>没有</strong>做能够判定两种融合方式孰优孰劣的对照实验： 两者在最终验收中的差距另有来源，详见 <a href="/projects/quadruped-lidar-rl/results-gallery/">结果与视频画廊</a>第四节。 本页只描述结构差异。</p> </div> <p>设置两个变体的动机是二者对「两张图之间的关系」做了不同的假设： 模型 A 让两张图<strong>共享同一个 32 维槽位</strong>，环状图只能以「残差修正」的身份介入； 模型 B 让两张图<strong>各占独立的 32 列</strong>，主干首层因而可以对二者学出完全不同的权重， 融合子网的职责被首层吸收，所以被删除。</p> <hr> <h2 id="二1473-维观测如何切片进入网络">二、1473 维观测如何切片进入网络</h2> <p>每个控制步由环境产出一个 1473 维向量，Actor 与 Critic 各取所需。 本节只讲<strong>切片如何分配给各个模块</strong>；每一段的物理语义属于 <a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>切片</th> <th>维度</th> <th>名称</th> <th>送进哪个模块</th> </tr> </thead> <tbody> <tr> <td>0 至 53</td> <td>53</td> <td>本体感受</td> <td>直接拼进主干；其中切片 6 至 8（两维）另经航向分支</td> </tr> <tr> <td>53 至 185</td> <td>132</td> <td>高程图</td> <td><code class="language-plaintext highlighter-rouge">scan_encoder</code></td> </tr> <tr> <td>185 至 194</td> <td>9</td> <td>显式特权</td> <td>直接拼进主干</td> </tr> <tr> <td>194 至 223</td> <td>29</td> <td>隐式特权</td> <td><code class="language-plaintext highlighter-rouge">priv_encoder</code></td> </tr> <tr> <td>223 至 753</td> <td>530</td> <td>历史 10 帧</td> <td><code class="language-plaintext highlighter-rouge">history_encoder</code></td> </tr> <tr> <td>753 至 1473</td> <td>720</td> <td>环状距离图</td> <td><code class="language-plaintext highlighter-rouge">lidar_encoder</code></td> </tr> </tbody> </table> </div> <p>三个容易被忽略的前提：</p> <div class="qrl-note"> <p><strong>一、高程图不是俯视真值。</strong>它与环状距离图<strong>同源</strong>， 都由同一台环状雷达的点云导出，只是栅格化方式不同。 这是理解后文「两个分支为什么会互相抢功能」的前提。两张图的构造过程见 <a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a>。</p> <p><strong>二、观测没有归一化层。</strong>经验归一化被显式关闭，各段量纲直接进网络。</p> <p><strong>三、环状距离图已在环境侧归一化</strong>到 0 至 1 区间， 但实测其中 <strong>90.2% 取的是哨兵值 3.0</strong>，即该方向在量程内没有命中。 这个稀疏度本身也构成一种失效条件：它让输入带有很大的直流偏置， 随机初始化的编码器会在几轮内塌缩成常数。该失效与其解法（环境侧归一化）见 <a href="/projects/quadruped-lidar-rl/engineering-log/">工程问题记录</a>问题卡十二。</p> </div> <p>Critic 只用其中五段，不含 530 维历史，见第七节。</p> <hr> <h2 id="三模型-a残差式融合">三、模型 A：残差式融合</h2> <div class="qrl-svg"> <svg viewbox="0 0 880 560" role="img" aria-label="模型 A 残差式融合的网络结构图：1473 维观测切成六段，分别经各分支编码器压缩，环状距离图经融合子网产生残差量叠加到高程图潜变量上，拼成 130 维主干输入后输出 12 维关节动作"> <defs> <style>
+</style>
+
+<div class="qrl-nav">
+  <a href="/projects/quadruped-lidar-rl/">← 项目主页</a>
+  <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a>
+  <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>
+  <span class="sep">·</span><span class="cur">网络结构与训练细节</span>
+  <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/engineering-log/">工程问题记录</a>
+  <span class="sep">·</span><a href="/projects/quadruped-lidar-rl/results-gallery/">结果与视频画廊</a>
+</div>
+
+<p>本页把策略网络拆到模块一级：每个分支吃进什么、输出多少维、用什么激活、
+梯度从哪条路回来、由哪个优化器更新、损失由哪几项加权而成。</p>
+
+<p><a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a> 一页讲的是
+「用什么算法、按什么目标优化」；本页讲的是「这套算法落到代码里，网络与训练循环具体是什么形状」。
+两张感知图本身的构造过程属于
+<a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a>。</p>
+
+<div class="qrl-note">
+  本页描述的是版本主线<strong>第 30 版</strong>（最终版）的网络与训练配置。
+  文中出现的「从零重训基线」指第 30 版之后另起的一组对照实验：
+  沿用同一套环境配置与奖励，但不继承任何权重、从随机初始化开始训练，
+  用于检验哪些设计依赖于热启动。它不属于版本主线，因此不带版本号。
+</div>
+
+<h2 id="一两个变体结构差异与权重不可互换">一、两个变体：结构差异与权重不可互换</h2>
+
+<p>第 30 版同时维护<strong>两个 Actor 变体</strong>。它们<strong>共用一切</strong>——观测、地形、奖励、Critic、PPO 超参
+全部相同，唯一的差别是 Actor 如何把「高程图潜变量」与「环状距离图潜变量」送进主干。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>项</th>
+        <th>模型 A（残差式融合）</th>
+        <th>模型 B（并排式融合）</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>类名</td>
+        <td><code class="language-plaintext highlighter-rouge">ActorYawLidarRLCplx</code></td>
+        <td><code class="language-plaintext highlighter-rouge">ActorYawLidarRLWide</code></td>
+      </tr>
+      <tr>
+        <td>融合方式</td>
+        <td>残差：<code class="language-plaintext highlighter-rouge">fused = scan_latent + fusion_mlp(lidar_latent)</code>
+</td>
+        <td>并排：两个潜变量各占独立的列</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">fusion_mlp</code></td>
+        <td>存在（门控层加两层 MLP）</td>
+        <td>
+<strong>不存在</strong>，直接删除</td>
+      </tr>
+      <tr>
+        <td>主干首层输入维度</td>
+        <td><strong>130</strong></td>
+        <td><strong>162</strong></td>
+      </tr>
+      <tr>
+        <td>首层布局</td>
+        <td>本体 53、fused 32、特权 9、latent 20、yaw 16</td>
+        <td>本体 53、scan 32、ring 32、特权 9、latent 20、yaw 16</td>
+      </tr>
+      <tr>
+        <td>零初始化的位置</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">fusion_mlp</code> 末层的权重与偏置</td>
+        <td>主干首层中 ring 所占的第 85 至 117 列</td>
+      </tr>
+      <tr>
+        <td>训练起点处的行为</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">fused</code> 恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code>
+</td>
+        <td>ring 列的贡献恒为 0</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>两种做法在训练起点处的效果是同一个：<strong>新增的环状图通路初始贡献为零，
+主干的输入与「只有高程图」时逐位相同</strong>，因此从上一代权重热启动时不存在冷启动代价。</p>
+
+<div class="qrl-key">
+  <p>两个变体的参数字典形状不同，<strong>权重绝对不可互换</strong>。
+  录制与评测时若把变体参数传错，加载会直接失败而不是静默错配——这是刻意的设计。</p>
+  <p>本项目<strong>没有</strong>做能够判定两种融合方式孰优孰劣的对照实验：
+  两者在最终验收中的差距另有来源，详见
+  <a href="/projects/quadruped-lidar-rl/results-gallery/">结果与视频画廊</a>第四节。
+  本页只描述结构差异。</p>
+</div>
+
+<p>设置两个变体的动机是二者对「两张图之间的关系」做了不同的假设：
+模型 A 让两张图<strong>共享同一个 32 维槽位</strong>，环状图只能以「残差修正」的身份介入；
+模型 B 让两张图<strong>各占独立的 32 列</strong>，主干首层因而可以对二者学出完全不同的权重，
+融合子网的职责被首层吸收，所以被删除。</p>
+
+<hr>
+
+<h2 id="二1473-维观测如何切片进入网络">二、1473 维观测如何切片进入网络</h2>
+
+<p>每个控制步由环境产出一个 1473 维向量，Actor 与 Critic 各取所需。
+本节只讲<strong>切片如何分配给各个模块</strong>；每一段的物理语义属于
+<a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>切片</th>
+        <th>维度</th>
+        <th>名称</th>
+        <th>送进哪个模块</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0 至 53</td>
+        <td>53</td>
+        <td>本体感受</td>
+        <td>直接拼进主干；其中切片 6 至 8（两维）另经航向分支</td>
+      </tr>
+      <tr>
+        <td>53 至 185</td>
+        <td>132</td>
+        <td>高程图</td>
+        <td><code class="language-plaintext highlighter-rouge">scan_encoder</code></td>
+      </tr>
+      <tr>
+        <td>185 至 194</td>
+        <td>9</td>
+        <td>显式特权</td>
+        <td>直接拼进主干</td>
+      </tr>
+      <tr>
+        <td>194 至 223</td>
+        <td>29</td>
+        <td>隐式特权</td>
+        <td><code class="language-plaintext highlighter-rouge">priv_encoder</code></td>
+      </tr>
+      <tr>
+        <td>223 至 753</td>
+        <td>530</td>
+        <td>历史 10 帧</td>
+        <td><code class="language-plaintext highlighter-rouge">history_encoder</code></td>
+      </tr>
+      <tr>
+        <td>753 至 1473</td>
+        <td>720</td>
+        <td>环状距离图</td>
+        <td><code class="language-plaintext highlighter-rouge">lidar_encoder</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>三个容易被忽略的前提：</p>
+
+<div class="qrl-note">
+  <p><strong>一、高程图不是俯视真值。</strong>它与环状距离图<strong>同源</strong>，
+  都由同一台环状雷达的点云导出，只是栅格化方式不同。
+  这是理解后文「两个分支为什么会互相抢功能」的前提。两张图的构造过程见
+  <a href="/projects/quadruped-lidar-rl/perception-terrain/">感知与地形课程</a>。</p>
+  <p><strong>二、观测没有归一化层。</strong>经验归一化被显式关闭，各段量纲直接进网络。</p>
+  <p><strong>三、环状距离图已在环境侧归一化</strong>到 0 至 1 区间，
+  但实测其中 <strong>90.2% 取的是哨兵值 3.0</strong>，即该方向在量程内没有命中。
+  这个稀疏度本身也构成一种失效条件：它让输入带有很大的直流偏置，
+  随机初始化的编码器会在几轮内塌缩成常数。该失效与其解法（环境侧归一化）见
+  <a href="/projects/quadruped-lidar-rl/engineering-log/">工程问题记录</a>问题卡十二。</p>
+</div>
+
+<p>Critic 只用其中五段，不含 530 维历史，见第七节。</p>
+
+<hr>
+
+<h2 id="三模型-a残差式融合">三、模型 A：残差式融合</h2>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 880 560" role="img" aria-label="模型 A 残差式融合的网络结构图：1473 维观测切成六段，分别经各分支编码器压缩，环状距离图经融合子网产生残差量叠加到高程图潜变量上，拼成 130 维主干输入后输出 12 维关节动作">
+  <defs>
+    <style>
       .qn-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn-t{font-size:12px;fill:currentColor}
       .qn-s{font-size:10.5px;fill:currentColor;opacity:.7}
       .qn-a{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;marker-end:url(#qnarrow1)}
       .qn-ah{stroke:var(--global-theme-color,#b509ac);stroke-width:1.4;fill:none;marker-end:url(#qnarrow1)}
-    </style> <marker id="qnarrow1" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path> </marker> </defs> <text class="qn-s" x="20" y="10">观测向量 obs [1473]</text> <rect class="qn-box" x="20" y="14" width="140" height="34" rx="5"></rect> <rect class="qn-box" x="160" y="14" width="140" height="34" rx="5"></rect> <rect class="qn-box" x="300" y="14" width="140" height="34" rx="5"></rect> <rect class="qn-box" x="440" y="14" width="140" height="34" rx="5"></rect> <rect class="qn-box" x="580" y="14" width="140" height="34" rx="5"></rect> <rect class="qn-hi" x="720" y="14" width="140" height="34" rx="5"></rect> <text class="qn-t" x="90" y="36" text-anchor="middle">本体 53</text> <text class="qn-t" x="230" y="36" text-anchor="middle">高程图 132</text> <text class="qn-t" x="370" y="36" text-anchor="middle">特权 9</text> <text class="qn-t" x="510" y="36" text-anchor="middle">特权隐 29</text> <text class="qn-t" x="650" y="36" text-anchor="middle">历史 530</text> <text class="qn-t" x="790" y="36" text-anchor="middle">环状图 720</text> <text class="qn-s" x="90" y="62" text-anchor="middle">0:53</text> <text class="qn-s" x="230" y="62" text-anchor="middle">53:185</text> <text class="qn-s" x="370" y="62" text-anchor="middle">185:194</text> <text class="qn-s" x="510" y="62" text-anchor="middle">194:223</text> <text class="qn-s" x="650" y="62" text-anchor="middle">223:753</text> <text class="qn-s" x="790" y="62" text-anchor="middle">753:1473</text> <path class="qn-a" d="M230,68 V88"></path> <path class="qn-a" d="M510,68 V88"></path> <path class="qn-a" d="M650,68 V88"></path> <path class="qn-a" d="M790,68 V88"></path> <rect class="qn-box" x="162" y="90" width="136" height="62" rx="6"></rect> <text class="qn-t" x="230" y="108" text-anchor="middle">scan_encoder</text> <text class="qn-s" x="230" y="124" text-anchor="middle">132 - 128 - 64 - 32</text> <text class="qn-s" x="230" y="140" text-anchor="middle">末层 Tanh，有界</text> <rect class="qn-box" x="444" y="90" width="132" height="62" rx="6"></rect> <text class="qn-t" x="510" y="108" text-anchor="middle">priv_encoder</text> <text class="qn-s" x="510" y="124" text-anchor="middle">29 - 64 - 20</text> <text class="qn-s" x="510" y="140" text-anchor="middle">ELU</text> <rect class="qn-box" x="584" y="90" width="132" height="62" rx="6"></rect> <text class="qn-t" x="650" y="108" text-anchor="middle">history_encoder</text> <text class="qn-s" x="650" y="124" text-anchor="middle">53 x 10 - 20</text> <text class="qn-s" x="650" y="140" text-anchor="middle">一维时序卷积</text> <rect class="qn-hi" x="722" y="90" width="136" height="62" rx="6"></rect> <text class="qn-t" x="790" y="108" text-anchor="middle">lidar_encoder</text> <text class="qn-s" x="790" y="124" text-anchor="middle">720 - 32（二维卷积）</text> <text class="qn-s" x="790" y="140" text-anchor="middle">末层 ELU，无界</text> <text class="qn-s" x="230" y="170" text-anchor="middle">scan_latent 32</text> <text class="qn-s" x="580" y="170" text-anchor="middle">二选一 latent 20</text> <text class="qn-s" x="790" y="170" text-anchor="middle">lidar_latent 32</text> <path class="qn-a" d="M510,152 V162 H580"></path> <path class="qn-a" d="M650,152 V162 H580"></path> <rect class="qn-hi" x="660" y="192" width="200" height="96" rx="6"></rect> <text class="qn-t" x="760" y="210" text-anchor="middle">fusion_mlp（仅模型 A 有）</text> <text class="qn-s" x="760" y="230" text-anchor="middle">门控层 64 - 32：丢掉 scan 那半</text> <text class="qn-s" x="760" y="250" text-anchor="middle">Linear 32 - 64 + ELU</text> <text class="qn-s" x="760" y="270" text-anchor="middle">Linear 64 - 32，末层零初始化</text> <path class="qn-ah" d="M790,176 V190"></path> <circle class="qn-hi" cx="430" cy="322" r="15"></circle> <text class="qn-t" x="430" y="327" text-anchor="middle">+</text> <path class="qn-a" d="M230,176 V322 H412"></path> <path class="qn-ah" d="M760,288 V322 H448"></path> <text class="qn-s" x="600" y="314" text-anchor="middle">残差量 32，初值恒为 0</text> <text class="qn-s" x="430" y="356" text-anchor="middle">fused 32　初始时等同 scan_latent</text> <rect class="qn-box" x="14" y="196" width="120" height="50" rx="6"></rect> <text class="qn-t" x="74" y="216" text-anchor="middle">yaw_encoder</text> <text class="qn-s" x="74" y="234" text-anchor="middle">2 - 32 - 16</text> <path class="qn-a" d="M60,68 V196"></path> <text class="qn-s" x="60" y="188" text-anchor="middle">航向误差 2</text> <rect class="qn-box" x="20" y="380" width="342" height="40" rx="5"></rect> <rect class="qn-hi" x="362" y="380" width="207" height="40" rx="5"></rect> <rect class="qn-box" x="569" y="380" width="58" height="40" rx="5"></rect> <rect class="qn-box" x="627" y="380" width="129" height="40" rx="5"></rect> <rect class="qn-box" x="756" y="380" width="103" height="40" rx="5"></rect> <text class="qn-t" x="191" y="399" text-anchor="middle">本体 53</text> <text class="qn-t" x="465" y="399" text-anchor="middle">fused 32</text> <text class="qn-t" x="598" y="399" text-anchor="middle">特权 9</text> <text class="qn-t" x="691" y="399" text-anchor="middle">latent 20</text> <text class="qn-t" x="807" y="399" text-anchor="middle">yaw 16</text> <text class="qn-s" x="191" y="414" text-anchor="middle">0:53</text> <text class="qn-s" x="465" y="414" text-anchor="middle">53:85</text> <text class="qn-s" x="598" y="414" text-anchor="middle">85:94</text> <text class="qn-s" x="691" y="414" text-anchor="middle">94:114</text> <text class="qn-s" x="807" y="414" text-anchor="middle">114:130</text> <text class="qn-s" x="20" y="372">主干输入 backbone_input [130]</text> <path class="qn-a" d="M110,68 V380"></path> <path class="qn-a" d="M370,68 V380"></path> <path class="qn-a" d="M430,337 V380"></path> <path class="qn-a" d="M74,246 V368 H807 V380"></path> <rect class="qn-box" x="270" y="450" width="340" height="76" rx="6"></rect> <text class="qn-t" x="440" y="468" text-anchor="middle">actor_backbone</text> <text class="qn-s" x="440" y="486" text-anchor="middle">Linear 130 - 512 + ELU　　Linear 512 - 256 + ELU</text> <text class="qn-s" x="440" y="504" text-anchor="middle">Linear 256 - 128 + ELU　　Linear 128 - 12</text> <path class="qn-a" d="M440,420 V448"></path> <path class="qn-a" d="M440,526 V544"></path> <text class="qn-t" x="440" y="556" text-anchor="middle">actions [12]　十二个关节目标角度</text> </svg> <div class="qrl-cap">图 1　模型 A（残差式融合）。环状距离图不直接占用主干输入的列，而是经融合子网产生一个残差量叠加到高程图潜变量上；融合子网末层零初始化，因此训练起点处该残差恒为零，主干输入与只有高程图时逐位相同。门控层丢弃融合子网输入中来自高程图潜变量的那一半，用于堵死「绕过环状图直接复制高程图特征」的捷径。</div> </div> <h3 id="31-高程图编码器">3.1 高程图编码器</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>项</th> <th>值</th> </tr> </thead> <tbody> <tr> <td>输入</td> <td>132 维高程图（12 乘 11 网格）</td> </tr> <tr> <td>输出</td> <td>32 维 <code class="language-plaintext highlighter-rouge">scan_latent</code> </td> </tr> <tr> <td>结构</td> <td>多层感知机，132 - 128 - 64 - 32</td> </tr> <tr> <td>末层激活</td> <td> <strong>Tanh</strong>，输出被夹在 −1 至 1 之间</td> </tr> <tr> <td>梯度来源</td> <td>PPO 主损失，以及高程图自监督重建（见第九节）</td> </tr> </tbody> </table> </div> <p>末层用 Tanh 而不是全网统一的 ELU，是这个分支从未出过事的直接原因， 详见第六节对各潜变量值域的对照。</p> <h3 id="32-环状距离图编码器">3.2 环状距离图编码器</h3> <p>这一路不是多层感知机，而是一个二维卷积网络：把 720 维展平向量重排成 10 个高度层乘 72 个方位角的二维张量之后再做卷积。</p> <div class="qrl-svg"> <svg viewbox="0 0 860 300" role="img" aria-label="环状距离图编码器内部结构：720 维展平向量重排为 10 层乘 72 角的二维张量，经环绕填充、两次卷积与角度维池化后展平，最后由全连接层压到 32 维"> <defs> <style>
+    </style>
+    <marker id="qnarrow1" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path>
+    </marker>
+  </defs>
+
+<text class="qn-s" x="20" y="10">观测向量 obs [1473]</text>
+<rect class="qn-box" x="20" y="14" width="140" height="34" rx="5"></rect>
+<rect class="qn-box" x="160" y="14" width="140" height="34" rx="5"></rect>
+<rect class="qn-box" x="300" y="14" width="140" height="34" rx="5"></rect>
+<rect class="qn-box" x="440" y="14" width="140" height="34" rx="5"></rect>
+<rect class="qn-box" x="580" y="14" width="140" height="34" rx="5"></rect>
+<rect class="qn-hi" x="720" y="14" width="140" height="34" rx="5"></rect>
+<text class="qn-t" x="90" y="36" text-anchor="middle">本体 53</text>
+<text class="qn-t" x="230" y="36" text-anchor="middle">高程图 132</text>
+<text class="qn-t" x="370" y="36" text-anchor="middle">特权 9</text>
+<text class="qn-t" x="510" y="36" text-anchor="middle">特权隐 29</text>
+<text class="qn-t" x="650" y="36" text-anchor="middle">历史 530</text>
+<text class="qn-t" x="790" y="36" text-anchor="middle">环状图 720</text>
+<text class="qn-s" x="90" y="62" text-anchor="middle">0:53</text>
+<text class="qn-s" x="230" y="62" text-anchor="middle">53:185</text>
+<text class="qn-s" x="370" y="62" text-anchor="middle">185:194</text>
+<text class="qn-s" x="510" y="62" text-anchor="middle">194:223</text>
+<text class="qn-s" x="650" y="62" text-anchor="middle">223:753</text>
+<text class="qn-s" x="790" y="62" text-anchor="middle">753:1473</text>
+
+  <path class="qn-a" d="M230,68 V88"></path>
+  <path class="qn-a" d="M510,68 V88"></path>
+  <path class="qn-a" d="M650,68 V88"></path>
+  <path class="qn-a" d="M790,68 V88"></path>
+
+  <rect class="qn-box" x="162" y="90" width="136" height="62" rx="6"></rect>
+  <text class="qn-t" x="230" y="108" text-anchor="middle">scan_encoder</text>
+  <text class="qn-s" x="230" y="124" text-anchor="middle">132 - 128 - 64 - 32</text>
+  <text class="qn-s" x="230" y="140" text-anchor="middle">末层 Tanh，有界</text>
+
+  <rect class="qn-box" x="444" y="90" width="132" height="62" rx="6"></rect>
+  <text class="qn-t" x="510" y="108" text-anchor="middle">priv_encoder</text>
+  <text class="qn-s" x="510" y="124" text-anchor="middle">29 - 64 - 20</text>
+  <text class="qn-s" x="510" y="140" text-anchor="middle">ELU</text>
+
+  <rect class="qn-box" x="584" y="90" width="132" height="62" rx="6"></rect>
+  <text class="qn-t" x="650" y="108" text-anchor="middle">history_encoder</text>
+  <text class="qn-s" x="650" y="124" text-anchor="middle">53 x 10 - 20</text>
+  <text class="qn-s" x="650" y="140" text-anchor="middle">一维时序卷积</text>
+
+  <rect class="qn-hi" x="722" y="90" width="136" height="62" rx="6"></rect>
+  <text class="qn-t" x="790" y="108" text-anchor="middle">lidar_encoder</text>
+  <text class="qn-s" x="790" y="124" text-anchor="middle">720 - 32（二维卷积）</text>
+  <text class="qn-s" x="790" y="140" text-anchor="middle">末层 ELU，无界</text>
+
+<text class="qn-s" x="230" y="170" text-anchor="middle">scan_latent 32</text>
+<text class="qn-s" x="580" y="170" text-anchor="middle">二选一 latent 20</text>
+<text class="qn-s" x="790" y="170" text-anchor="middle">lidar_latent 32</text>
+<path class="qn-a" d="M510,152 V162 H580"></path>
+<path class="qn-a" d="M650,152 V162 H580"></path>
+
+  <rect class="qn-hi" x="660" y="192" width="200" height="96" rx="6"></rect>
+  <text class="qn-t" x="760" y="210" text-anchor="middle">fusion_mlp（仅模型 A 有）</text>
+  <text class="qn-s" x="760" y="230" text-anchor="middle">门控层 64 - 32：丢掉 scan 那半</text>
+  <text class="qn-s" x="760" y="250" text-anchor="middle">Linear 32 - 64 + ELU</text>
+  <text class="qn-s" x="760" y="270" text-anchor="middle">Linear 64 - 32，末层零初始化</text>
+  <path class="qn-ah" d="M790,176 V190"></path>
+
+  <circle class="qn-hi" cx="430" cy="322" r="15"></circle>
+  <text class="qn-t" x="430" y="327" text-anchor="middle">+</text>
+  <path class="qn-a" d="M230,176 V322 H412"></path>
+  <path class="qn-ah" d="M760,288 V322 H448"></path>
+  <text class="qn-s" x="600" y="314" text-anchor="middle">残差量 32，初值恒为 0</text>
+  <text class="qn-s" x="430" y="356" text-anchor="middle">fused 32　初始时等同 scan_latent</text>
+
+  <rect class="qn-box" x="14" y="196" width="120" height="50" rx="6"></rect>
+  <text class="qn-t" x="74" y="216" text-anchor="middle">yaw_encoder</text>
+  <text class="qn-s" x="74" y="234" text-anchor="middle">2 - 32 - 16</text>
+  <path class="qn-a" d="M60,68 V196"></path>
+  <text class="qn-s" x="60" y="188" text-anchor="middle">航向误差 2</text>
+
+  <rect class="qn-box" x="20" y="380" width="342" height="40" rx="5"></rect>
+  <rect class="qn-hi" x="362" y="380" width="207" height="40" rx="5"></rect>
+  <rect class="qn-box" x="569" y="380" width="58" height="40" rx="5"></rect>
+  <rect class="qn-box" x="627" y="380" width="129" height="40" rx="5"></rect>
+  <rect class="qn-box" x="756" y="380" width="103" height="40" rx="5"></rect>
+  <text class="qn-t" x="191" y="399" text-anchor="middle">本体 53</text>
+  <text class="qn-t" x="465" y="399" text-anchor="middle">fused 32</text>
+  <text class="qn-t" x="598" y="399" text-anchor="middle">特权 9</text>
+  <text class="qn-t" x="691" y="399" text-anchor="middle">latent 20</text>
+  <text class="qn-t" x="807" y="399" text-anchor="middle">yaw 16</text>
+  <text class="qn-s" x="191" y="414" text-anchor="middle">0:53</text>
+  <text class="qn-s" x="465" y="414" text-anchor="middle">53:85</text>
+  <text class="qn-s" x="598" y="414" text-anchor="middle">85:94</text>
+  <text class="qn-s" x="691" y="414" text-anchor="middle">94:114</text>
+  <text class="qn-s" x="807" y="414" text-anchor="middle">114:130</text>
+  <text class="qn-s" x="20" y="372">主干输入 backbone_input [130]</text>
+
+  <path class="qn-a" d="M110,68 V380"></path>
+  <path class="qn-a" d="M370,68 V380"></path>
+  <path class="qn-a" d="M430,337 V380"></path>
+  <path class="qn-a" d="M74,246 V368 H807 V380"></path>
+
+  <rect class="qn-box" x="270" y="450" width="340" height="76" rx="6"></rect>
+  <text class="qn-t" x="440" y="468" text-anchor="middle">actor_backbone</text>
+  <text class="qn-s" x="440" y="486" text-anchor="middle">Linear 130 - 512 + ELU　　Linear 512 - 256 + ELU</text>
+  <text class="qn-s" x="440" y="504" text-anchor="middle">Linear 256 - 128 + ELU　　Linear 128 - 12</text>
+  <path class="qn-a" d="M440,420 V448"></path>
+  <path class="qn-a" d="M440,526 V544"></path>
+  <text class="qn-t" x="440" y="556" text-anchor="middle">actions [12]　十二个关节目标角度</text>
+</svg>
+<div class="qrl-cap">图 1　模型 A（残差式融合）。环状距离图不直接占用主干输入的列，而是经融合子网产生一个残差量叠加到高程图潜变量上；融合子网末层零初始化，因此训练起点处该残差恒为零，主干输入与只有高程图时逐位相同。门控层丢弃融合子网输入中来自高程图潜变量的那一半，用于堵死「绕过环状图直接复制高程图特征」的捷径。</div>
+</div>
+
+<h3 id="31-高程图编码器">3.1 高程图编码器</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>项</th>
+        <th>值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>输入</td>
+        <td>132 维高程图（12 乘 11 网格）</td>
+      </tr>
+      <tr>
+        <td>输出</td>
+        <td>32 维 <code class="language-plaintext highlighter-rouge">scan_latent</code>
+</td>
+      </tr>
+      <tr>
+        <td>结构</td>
+        <td>多层感知机，132 - 128 - 64 - 32</td>
+      </tr>
+      <tr>
+        <td>末层激活</td>
+        <td>
+<strong>Tanh</strong>，输出被夹在 −1 至 1 之间</td>
+      </tr>
+      <tr>
+        <td>梯度来源</td>
+        <td>PPO 主损失，以及高程图自监督重建（见第九节）</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>末层用 Tanh 而不是全网统一的 ELU，是这个分支从未出过事的直接原因，
+详见第六节对各潜变量值域的对照。</p>
+
+<h3 id="32-环状距离图编码器">3.2 环状距离图编码器</h3>
+
+<p>这一路不是多层感知机，而是一个二维卷积网络：把 720 维展平向量重排成
+10 个高度层乘 72 个方位角的二维张量之后再做卷积。</p>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 860 300" role="img" aria-label="环状距离图编码器内部结构：720 维展平向量重排为 10 层乘 72 角的二维张量，经环绕填充、两次卷积与角度维池化后展平，最后由全连接层压到 32 维">
+  <defs>
+    <style>
       .qn3-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn3-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn3-t{font-size:12px;fill:currentColor}
       .qn3-s{font-size:10.5px;fill:currentColor;opacity:.7}
       .qn3-a{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;marker-end:url(#qnarrow3)}
-    </style> <marker id="qnarrow3" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path> </marker> </defs> <rect class="qn3-box" x="14" y="30" width="120" height="38" rx="5"></rect> <text class="qn3-t" x="74" y="54" text-anchor="middle">[N, 720]</text> <rect class="qn3-box" x="184" y="30" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="254" y="54" text-anchor="middle">[N, 1, 10, 72]</text> <rect class="qn3-hi" x="374" y="30" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="444" y="54" text-anchor="middle">[N, 1, 12, 74]</text> <rect class="qn3-box" x="564" y="30" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="634" y="54" text-anchor="middle">[N, 16, 10, 72]</text> <path class="qn3-a" d="M134,49 H182"></path> <text class="qn3-s" x="158" y="42" text-anchor="middle">重排</text> <path class="qn3-a" d="M324,49 H372"></path> <text class="qn3-s" x="348" y="42" text-anchor="middle">填充</text> <path class="qn3-a" d="M514,49 H562"></path> <text class="qn3-s" x="538" y="42" text-anchor="middle">卷积</text> <text class="qn3-s" x="254" y="88" text-anchor="middle">10 个高度层 x 72 个方位</text> <text class="qn3-s" x="444" y="88" text-anchor="middle">角度维环绕填充，高度维复制填充</text> <text class="qn3-s" x="634" y="88" text-anchor="middle">Conv2d(1 - 16, k=3) + ELU</text> <path class="qn3-a" d="M634,100 V126 H74 V146"></path> <rect class="qn3-box" x="14" y="148" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="84" y="172" text-anchor="middle">[N, 16, 10, 36]</text> <rect class="qn3-box" x="214" y="148" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="284" y="172" text-anchor="middle">[N, 32, 10, 36]</text> <rect class="qn3-box" x="414" y="148" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="484" y="172" text-anchor="middle">[N, 11520]</text> <rect class="qn3-hi" x="614" y="148" width="140" height="38" rx="5"></rect> <text class="qn3-t" x="684" y="172" text-anchor="middle">lidar_latent [N, 32]</text> <path class="qn3-a" d="M154,167 H212"></path> <path class="qn3-a" d="M354,167 H412"></path> <path class="qn3-a" d="M554,167 H612"></path> <text class="qn3-s" x="84" y="206" text-anchor="middle">MaxPool2d(k=(1,2))</text> <text class="qn3-s" x="84" y="222" text-anchor="middle">只在角度维下采样</text> <text class="qn3-s" x="284" y="206" text-anchor="middle">再填充后 Conv2d(16 - 32, k=3) + ELU</text> <text class="qn3-s" x="484" y="206" text-anchor="middle">展平，长度由一次空跑前向自动推算</text> <text class="qn3-s" x="684" y="206" text-anchor="middle">Linear(11520 - 32) + ELU</text> <text class="qn3-t" x="430" y="262" text-anchor="middle">角度维必须用环绕填充：第 0 个方位与第 71 个方位在物理上相邻</text> <text class="qn3-t" x="430" y="282" text-anchor="middle">若改用补零填充，会在方位接缝处造出一堵并不存在的障碍</text> </svg> <div class="qrl-cap">图 3　环状距离图编码器内部。高度维保持十层不做下采样，只在方位维做一次二倍池化，因为高度分层是判断能否匍匐通过的依据，压缩后不可恢复。末层激活为 ELU，输出无界，这一点是后文分析潜变量尺度失控与梯度供给的前提。</div> </div> <div class="qrl-tbl"> <table> <thead> <tr> <th>层</th> <th>配置</th> </tr> </thead> <tbody> <tr> <td>填充</td> <td>方位维<strong>环绕填充</strong>，高度维<strong>复制填充</strong> </td> </tr> <tr> <td>第一层卷积</td> <td> <code class="language-plaintext highlighter-rouge">Conv2d(1, 16, kernel=3)</code> 加 ELU</td> </tr> <tr> <td>池化</td> <td> <code class="language-plaintext highlighter-rouge">MaxPool2d(kernel=(1,2))</code>，<strong>只在方位维下采样</strong> </td> </tr> <tr> <td>第二层卷积</td> <td> <code class="language-plaintext highlighter-rouge">Conv2d(16, 32, kernel=3)</code> 加 ELU</td> </tr> <tr> <td>全连接</td> <td> <code class="language-plaintext highlighter-rouge">Linear(11520, 32)</code> 加 ELU，展平长度由一次空跑前向自动推算</td> </tr> </tbody> </table> </div> <p>两个设计点值得单独说明：</p> <div class="qrl-key"> <p><strong>方位维必须用环绕填充。</strong>环状图的第 0 个方位与第 71 个方位 在物理上是相邻的。若沿用默认的补零填充，会在这个接缝处凭空造出一堵并不存在的墙。</p> <p><strong>高度维不做下采样。</strong>池化核只在方位维取 2，高度维保持 10 层原样。 高度分层是判断「能否匍匐通过」的依据，一旦压缩就不可恢复。</p> </div> <p>展平长度由一次空跑前向自动推算，而不是手工算好写死——这类维度手算出错时 报错信息通常出现在很远的地方，自动推算把这个隐患消除掉了。</p> <h3 id="33-融合子网">3.3 融合子网</h3> <p>融合子网是模型 A 独有的，结构是一个无参门控层加两层全连接：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>_LidarOnlyGate(32)        输入 64 维，输出 32 维，无参数
+    </style>
+    <marker id="qnarrow3" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path>
+    </marker>
+  </defs>
+
+  <rect class="qn3-box" x="14" y="30" width="120" height="38" rx="5"></rect>
+  <text class="qn3-t" x="74" y="54" text-anchor="middle">[N, 720]</text>
+  <rect class="qn3-box" x="184" y="30" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="254" y="54" text-anchor="middle">[N, 1, 10, 72]</text>
+  <rect class="qn3-hi" x="374" y="30" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="444" y="54" text-anchor="middle">[N, 1, 12, 74]</text>
+  <rect class="qn3-box" x="564" y="30" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="634" y="54" text-anchor="middle">[N, 16, 10, 72]</text>
+
+  <path class="qn3-a" d="M134,49 H182"></path>
+  <text class="qn3-s" x="158" y="42" text-anchor="middle">重排</text>
+  <path class="qn3-a" d="M324,49 H372"></path>
+  <text class="qn3-s" x="348" y="42" text-anchor="middle">填充</text>
+  <path class="qn3-a" d="M514,49 H562"></path>
+  <text class="qn3-s" x="538" y="42" text-anchor="middle">卷积</text>
+
+<text class="qn3-s" x="254" y="88" text-anchor="middle">10 个高度层 x 72 个方位</text>
+<text class="qn3-s" x="444" y="88" text-anchor="middle">角度维环绕填充，高度维复制填充</text>
+<text class="qn3-s" x="634" y="88" text-anchor="middle">Conv2d(1 - 16, k=3) + ELU</text>
+
+  <path class="qn3-a" d="M634,100 V126 H74 V146"></path>
+
+  <rect class="qn3-box" x="14" y="148" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="84" y="172" text-anchor="middle">[N, 16, 10, 36]</text>
+  <rect class="qn3-box" x="214" y="148" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="284" y="172" text-anchor="middle">[N, 32, 10, 36]</text>
+  <rect class="qn3-box" x="414" y="148" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="484" y="172" text-anchor="middle">[N, 11520]</text>
+  <rect class="qn3-hi" x="614" y="148" width="140" height="38" rx="5"></rect>
+  <text class="qn3-t" x="684" y="172" text-anchor="middle">lidar_latent [N, 32]</text>
+
+  <path class="qn3-a" d="M154,167 H212"></path>
+  <path class="qn3-a" d="M354,167 H412"></path>
+  <path class="qn3-a" d="M554,167 H612"></path>
+
+<text class="qn3-s" x="84" y="206" text-anchor="middle">MaxPool2d(k=(1,2))</text>
+<text class="qn3-s" x="84" y="222" text-anchor="middle">只在角度维下采样</text>
+<text class="qn3-s" x="284" y="206" text-anchor="middle">再填充后 Conv2d(16 - 32, k=3) + ELU</text>
+<text class="qn3-s" x="484" y="206" text-anchor="middle">展平，长度由一次空跑前向自动推算</text>
+<text class="qn3-s" x="684" y="206" text-anchor="middle">Linear(11520 - 32) + ELU</text>
+
+<text class="qn3-t" x="430" y="262" text-anchor="middle">角度维必须用环绕填充：第 0 个方位与第 71 个方位在物理上相邻</text>
+<text class="qn3-t" x="430" y="282" text-anchor="middle">若改用补零填充，会在方位接缝处造出一堵并不存在的障碍</text>
+</svg>
+<div class="qrl-cap">图 3　环状距离图编码器内部。高度维保持十层不做下采样，只在方位维做一次二倍池化，因为高度分层是判断能否匍匐通过的依据，压缩后不可恢复。末层激活为 ELU，输出无界，这一点是后文分析潜变量尺度失控与梯度供给的前提。</div>
+</div>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>层</th>
+        <th>配置</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>填充</td>
+        <td>方位维<strong>环绕填充</strong>，高度维<strong>复制填充</strong>
+</td>
+      </tr>
+      <tr>
+        <td>第一层卷积</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">Conv2d(1, 16, kernel=3)</code> 加 ELU</td>
+      </tr>
+      <tr>
+        <td>池化</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">MaxPool2d(kernel=(1,2))</code>，<strong>只在方位维下采样</strong>
+</td>
+      </tr>
+      <tr>
+        <td>第二层卷积</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">Conv2d(16, 32, kernel=3)</code> 加 ELU</td>
+      </tr>
+      <tr>
+        <td>全连接</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">Linear(11520, 32)</code> 加 ELU，展平长度由一次空跑前向自动推算</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>两个设计点值得单独说明：</p>
+
+<div class="qrl-key">
+  <p><strong>方位维必须用环绕填充。</strong>环状图的第 0 个方位与第 71 个方位
+  在物理上是相邻的。若沿用默认的补零填充，会在这个接缝处凭空造出一堵并不存在的墙。</p>
+  <p><strong>高度维不做下采样。</strong>池化核只在方位维取 2，高度维保持 10 层原样。
+  高度分层是判断「能否匍匐通过」的依据，一旦压缩就不可恢复。</p>
+</div>
+
+<p>展平长度由一次空跑前向自动推算，而不是手工算好写死——这类维度手算出错时
+报错信息通常出现在很远的地方，自动推算把这个隐患消除掉了。</p>
+
+<h3 id="33-融合子网">3.3 融合子网</h3>
+
+<p>融合子网是模型 A 独有的，结构是一个无参门控层加两层全连接：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>_LidarOnlyGate(32)        输入 64 维，输出 32 维，无参数
 Linear(32, 64) + ELU
 Linear(64, 32)            末层权重与偏置均零初始化
-</code></pre></div></div> <p>末层零初始化使 <code class="language-plaintext highlighter-rouge">fused</code> 在训练起点处恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code>。 真正需要解释的是那个<strong>门控层</strong>：它的作用是<strong>从结构上消除捷径学习</strong>。</p> <div class="qrl-note"> 在环状图首次接入观测的那一版，融合子网的输入是两个潜变量拼接的结果。 这意味着它<strong>仅凭高程图潜变量就能产出一个有效的残差</strong>，而这条路径的回报即时可得； 相比之下，「从 720 维稀疏输入中提取信息」需要先学会解读整张图才能获得回报。 PPO 会优先利用回报最快的梯度方向，于是必然选择前者。 </div> <p>这不是推测，有实测数据：环状图潜变量的跨样本标准差在<strong>第 12 轮归零， 此后 2988 轮恒为零</strong>；同期融合残差与高程图潜变量的幅度比稳定在 1.19。 也就是说融合子网退化成了一个<strong>纯高程图驱动的变换层</strong>，环状图的贡献严格为零。</p> <p>有两点必须与之一并记住：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>结论</th> <th>依据</th> </tr> </thead> <tbody> <tr> <td>这<strong>不是</strong>「环状图没有信息可学」</td> <td>回放实测环状图的跨环境标准差为 0.08008，输入端有真实信号。是网络在有信号的情况下<strong>主动学会了忽略它</strong> </td> </tr> <tr> <td>该塌缩<strong>自我强化、不可逆</strong> </td> <td>潜变量变成常数之后，流经该编码器的梯度也随之趋近于零。第 12 轮时策略还什么都没学会，等不到「训练久了自然会用上」</td> </tr> </tbody> </table> </div> <p>门控层的做法是：<strong>丢掉融合子网输入中来自高程图潜变量的那一半</strong>， 只让环状图潜变量进入后续两层。捷径在结构上被切断，而不是靠调权重去抑制。</p> <p>门控被实现成一个正式的网络模块而不是一个匿名函数，是为了让它能进入 参数字典的键序并被正常打印。这带来一个<strong>有意为之的副作用</strong>：融合子网的键位发生了位移， 从而<strong>强迫权重加载器显式处理这几个键</strong>，而不是静默错配。</p> <hr> <h2 id="四模型-b并排式加宽">四、模型 B：并排式加宽</h2> <div class="qrl-svg"> <svg viewbox="0 0 880 420" role="img" aria-label="模型 B 并排式融合的网络结构图：高程图与环状距离图的潜变量各占主干输入的独立三十二列，没有融合子网，主干首层由 130 加宽到 162"> <defs> <style>
+</code></pre></div></div>
+
+<p>末层零初始化使 <code class="language-plaintext highlighter-rouge">fused</code> 在训练起点处恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code>。
+真正需要解释的是那个<strong>门控层</strong>：它的作用是<strong>从结构上消除捷径学习</strong>。</p>
+
+<div class="qrl-note">
+  在环状图首次接入观测的那一版，融合子网的输入是两个潜变量拼接的结果。
+  这意味着它<strong>仅凭高程图潜变量就能产出一个有效的残差</strong>，而这条路径的回报即时可得；
+  相比之下，「从 720 维稀疏输入中提取信息」需要先学会解读整张图才能获得回报。
+  PPO 会优先利用回报最快的梯度方向，于是必然选择前者。
+</div>
+
+<p>这不是推测，有实测数据：环状图潜变量的跨样本标准差在<strong>第 12 轮归零，
+此后 2988 轮恒为零</strong>；同期融合残差与高程图潜变量的幅度比稳定在 1.19。
+也就是说融合子网退化成了一个<strong>纯高程图驱动的变换层</strong>，环状图的贡献严格为零。</p>
+
+<p>有两点必须与之一并记住：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>结论</th>
+        <th>依据</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>这<strong>不是</strong>「环状图没有信息可学」</td>
+        <td>回放实测环状图的跨环境标准差为 0.08008，输入端有真实信号。是网络在有信号的情况下<strong>主动学会了忽略它</strong>
+</td>
+      </tr>
+      <tr>
+        <td>该塌缩<strong>自我强化、不可逆</strong>
+</td>
+        <td>潜变量变成常数之后，流经该编码器的梯度也随之趋近于零。第 12 轮时策略还什么都没学会，等不到「训练久了自然会用上」</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>门控层的做法是：<strong>丢掉融合子网输入中来自高程图潜变量的那一半</strong>，
+只让环状图潜变量进入后续两层。捷径在结构上被切断，而不是靠调权重去抑制。</p>
+
+<p>门控被实现成一个正式的网络模块而不是一个匿名函数，是为了让它能进入
+参数字典的键序并被正常打印。这带来一个<strong>有意为之的副作用</strong>：融合子网的键位发生了位移，
+从而<strong>强迫权重加载器显式处理这几个键</strong>，而不是静默错配。</p>
+
+<hr>
+
+<h2 id="四模型-b并排式加宽">四、模型 B：并排式加宽</h2>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 880 420" role="img" aria-label="模型 B 并排式融合的网络结构图：高程图与环状距离图的潜变量各占主干输入的独立三十二列，没有融合子网，主干首层由 130 加宽到 162">
+  <defs>
+    <style>
       .qn2-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn2-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn2-t{font-size:12px;fill:currentColor}
       .qn2-s{font-size:10.5px;fill:currentColor;opacity:.7}
       .qn2-a{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;marker-end:url(#qnarrow2)}
-    </style> <marker id="qnarrow2" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path> </marker> </defs> <text class="qn2-s" x="20" y="12">观测切片</text> <text class="qn2-t" x="75" y="34" text-anchor="middle">本体 53</text> <text class="qn2-t" x="215" y="34" text-anchor="middle">高程图 132</text> <text class="qn2-t" x="365" y="34" text-anchor="middle">环状图 720</text> <text class="qn2-t" x="515" y="34" text-anchor="middle">特权 9</text> <text class="qn2-t" x="655" y="34" text-anchor="middle">特权隐 29 / 历史 530</text> <text class="qn2-t" x="812" y="34" text-anchor="middle">航向误差 2</text> <path class="qn2-a" d="M215,42 V64"></path> <path class="qn2-a" d="M365,42 V64"></path> <path class="qn2-a" d="M655,42 V64"></path> <path class="qn2-a" d="M812,42 V64"></path> <rect class="qn2-box" x="150" y="66" width="130" height="58" rx="6"></rect> <text class="qn2-t" x="215" y="84" text-anchor="middle">scan_encoder</text> <text class="qn2-s" x="215" y="100" text-anchor="middle">132 - 128 - 64 - 32</text> <text class="qn2-s" x="215" y="116" text-anchor="middle">末层 Tanh，有界</text> <rect class="qn2-hi" x="300" y="66" width="130" height="58" rx="6"></rect> <text class="qn2-t" x="365" y="84" text-anchor="middle">lidar_encoder</text> <text class="qn2-s" x="365" y="100" text-anchor="middle">720 - 32（二维卷积）</text> <text class="qn2-s" x="365" y="116" text-anchor="middle">末层 ELU，无界</text> <rect class="qn2-box" x="590" y="66" width="130" height="58" rx="6"></rect> <text class="qn2-t" x="655" y="84" text-anchor="middle">priv / history</text> <text class="qn2-s" x="655" y="100" text-anchor="middle">二选一 - 20</text> <text class="qn2-s" x="655" y="116" text-anchor="middle">ELU</text> <rect class="qn2-box" x="750" y="66" width="124" height="58" rx="6"></rect> <text class="qn2-t" x="812" y="84" text-anchor="middle">yaw_encoder</text> <text class="qn2-s" x="812" y="100" text-anchor="middle">2 - 32 - 16</text> <text class="qn2-t" x="440" y="152" text-anchor="middle">本变体没有融合子网，两路潜变量并排进入主干</text> <rect class="qn2-box" x="20" y="180" width="274" height="40" rx="5"></rect> <rect class="qn2-box" x="294" y="180" width="166" height="40" rx="5"></rect> <rect class="qn2-hi" x="460" y="180" width="166" height="40" rx="5"></rect> <rect class="qn2-box" x="626" y="180" width="47" height="40" rx="5"></rect> <rect class="qn2-box" x="673" y="180" width="103" height="40" rx="5"></rect> <rect class="qn2-box" x="776" y="180" width="83" height="40" rx="5"></rect> <text class="qn2-t" x="157" y="199" text-anchor="middle">本体 53</text> <text class="qn2-t" x="377" y="199" text-anchor="middle">scan_lat 32</text> <text class="qn2-t" x="543" y="199" text-anchor="middle">ring_lat 32</text> <text class="qn2-t" x="649" y="199" text-anchor="middle">9</text> <text class="qn2-t" x="724" y="199" text-anchor="middle">latent 20</text> <text class="qn2-t" x="817" y="199" text-anchor="middle">yaw 16</text> <text class="qn2-s" x="157" y="214" text-anchor="middle">0:53</text> <text class="qn2-s" x="377" y="214" text-anchor="middle">53:85</text> <text class="qn2-s" x="543" y="214" text-anchor="middle">85:117　零初始化</text> <text class="qn2-s" x="649" y="214" text-anchor="middle">117:126</text> <text class="qn2-s" x="724" y="214" text-anchor="middle">126:146</text> <text class="qn2-s" x="817" y="214" text-anchor="middle">146:162</text> <text class="qn2-s" x="20" y="172">主干输入 backbone_input [162]</text> <path class="qn2-a" d="M75,42 V180"></path> <path class="qn2-a" d="M215,124 V180"></path> <path class="qn2-a" d="M365,124 V166 H543 V180"></path> <path class="qn2-a" d="M515,42 V180"></path> <path class="qn2-a" d="M655,124 V166 H724 V180"></path> <path class="qn2-a" d="M812,124 V180"></path> <rect class="qn2-box" x="270" y="250" width="340" height="76" rx="6"></rect> <text class="qn2-t" x="440" y="268" text-anchor="middle">actor_backbone</text> <text class="qn2-s" x="440" y="286" text-anchor="middle">Linear 162 - 512 + ELU　　Linear 512 - 256 + ELU</text> <text class="qn2-s" x="440" y="304" text-anchor="middle">Linear 256 - 128 + ELU　　Linear 128 - 12</text> <path class="qn2-a" d="M440,220 V248"></path> <path class="qn2-a" d="M440,326 V346"></path> <text class="qn2-t" x="440" y="358" text-anchor="middle">actions [12]</text> <text class="qn2-s" x="440" y="384" text-anchor="middle">与模型 A 相比只有主干首层不同（130 对 162），其余三层逐层相同</text> <text class="qn2-s" x="440" y="404" text-anchor="middle">两者的参数字典形状不同，权重不可互换</text> </svg> <div class="qrl-cap">图 2　模型 B（并排式融合）。两张感知图的潜变量各占主干输入中互不重叠的三十二列，主干首层可以对二者学出完全不同的权重，融合子网的职责被首层吸收因而被删除。环状图对应的那三十二列在初始化时置零，作用与模型 A 的融合子网末层零初始化相同：保证训练起点处新增通路不改变既有行为。</div> </div> <p>模型 B 删掉融合子网，改为把主干首层由 130 加宽到 162，让两张图各占独立的列：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>模型 A（130）  本体 0:53  | fused 53:85 |             | 特权 85:94  | latent 94:114 | yaw 114:130
+    </style>
+    <marker id="qnarrow2" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path>
+    </marker>
+  </defs>
+
+<text class="qn2-s" x="20" y="12">观测切片</text>
+<text class="qn2-t" x="75" y="34" text-anchor="middle">本体 53</text>
+<text class="qn2-t" x="215" y="34" text-anchor="middle">高程图 132</text>
+<text class="qn2-t" x="365" y="34" text-anchor="middle">环状图 720</text>
+<text class="qn2-t" x="515" y="34" text-anchor="middle">特权 9</text>
+<text class="qn2-t" x="655" y="34" text-anchor="middle">特权隐 29 / 历史 530</text>
+<text class="qn2-t" x="812" y="34" text-anchor="middle">航向误差 2</text>
+
+  <path class="qn2-a" d="M215,42 V64"></path>
+  <path class="qn2-a" d="M365,42 V64"></path>
+  <path class="qn2-a" d="M655,42 V64"></path>
+  <path class="qn2-a" d="M812,42 V64"></path>
+
+  <rect class="qn2-box" x="150" y="66" width="130" height="58" rx="6"></rect>
+  <text class="qn2-t" x="215" y="84" text-anchor="middle">scan_encoder</text>
+  <text class="qn2-s" x="215" y="100" text-anchor="middle">132 - 128 - 64 - 32</text>
+  <text class="qn2-s" x="215" y="116" text-anchor="middle">末层 Tanh，有界</text>
+
+  <rect class="qn2-hi" x="300" y="66" width="130" height="58" rx="6"></rect>
+  <text class="qn2-t" x="365" y="84" text-anchor="middle">lidar_encoder</text>
+  <text class="qn2-s" x="365" y="100" text-anchor="middle">720 - 32（二维卷积）</text>
+  <text class="qn2-s" x="365" y="116" text-anchor="middle">末层 ELU，无界</text>
+
+  <rect class="qn2-box" x="590" y="66" width="130" height="58" rx="6"></rect>
+  <text class="qn2-t" x="655" y="84" text-anchor="middle">priv / history</text>
+  <text class="qn2-s" x="655" y="100" text-anchor="middle">二选一 - 20</text>
+  <text class="qn2-s" x="655" y="116" text-anchor="middle">ELU</text>
+
+  <rect class="qn2-box" x="750" y="66" width="124" height="58" rx="6"></rect>
+  <text class="qn2-t" x="812" y="84" text-anchor="middle">yaw_encoder</text>
+  <text class="qn2-s" x="812" y="100" text-anchor="middle">2 - 32 - 16</text>
+
+<text class="qn2-t" x="440" y="152" text-anchor="middle">本变体没有融合子网，两路潜变量并排进入主干</text>
+
+  <rect class="qn2-box" x="20" y="180" width="274" height="40" rx="5"></rect>
+  <rect class="qn2-box" x="294" y="180" width="166" height="40" rx="5"></rect>
+  <rect class="qn2-hi" x="460" y="180" width="166" height="40" rx="5"></rect>
+  <rect class="qn2-box" x="626" y="180" width="47" height="40" rx="5"></rect>
+  <rect class="qn2-box" x="673" y="180" width="103" height="40" rx="5"></rect>
+  <rect class="qn2-box" x="776" y="180" width="83" height="40" rx="5"></rect>
+  <text class="qn2-t" x="157" y="199" text-anchor="middle">本体 53</text>
+  <text class="qn2-t" x="377" y="199" text-anchor="middle">scan_lat 32</text>
+  <text class="qn2-t" x="543" y="199" text-anchor="middle">ring_lat 32</text>
+  <text class="qn2-t" x="649" y="199" text-anchor="middle">9</text>
+  <text class="qn2-t" x="724" y="199" text-anchor="middle">latent 20</text>
+  <text class="qn2-t" x="817" y="199" text-anchor="middle">yaw 16</text>
+  <text class="qn2-s" x="157" y="214" text-anchor="middle">0:53</text>
+  <text class="qn2-s" x="377" y="214" text-anchor="middle">53:85</text>
+  <text class="qn2-s" x="543" y="214" text-anchor="middle">85:117　零初始化</text>
+  <text class="qn2-s" x="649" y="214" text-anchor="middle">117:126</text>
+  <text class="qn2-s" x="724" y="214" text-anchor="middle">126:146</text>
+  <text class="qn2-s" x="817" y="214" text-anchor="middle">146:162</text>
+  <text class="qn2-s" x="20" y="172">主干输入 backbone_input [162]</text>
+
+  <path class="qn2-a" d="M75,42 V180"></path>
+  <path class="qn2-a" d="M215,124 V180"></path>
+  <path class="qn2-a" d="M365,124 V166 H543 V180"></path>
+  <path class="qn2-a" d="M515,42 V180"></path>
+  <path class="qn2-a" d="M655,124 V166 H724 V180"></path>
+  <path class="qn2-a" d="M812,124 V180"></path>
+
+  <rect class="qn2-box" x="270" y="250" width="340" height="76" rx="6"></rect>
+  <text class="qn2-t" x="440" y="268" text-anchor="middle">actor_backbone</text>
+  <text class="qn2-s" x="440" y="286" text-anchor="middle">Linear 162 - 512 + ELU　　Linear 512 - 256 + ELU</text>
+  <text class="qn2-s" x="440" y="304" text-anchor="middle">Linear 256 - 128 + ELU　　Linear 128 - 12</text>
+  <path class="qn2-a" d="M440,220 V248"></path>
+  <path class="qn2-a" d="M440,326 V346"></path>
+  <text class="qn2-t" x="440" y="358" text-anchor="middle">actions [12]</text>
+  <text class="qn2-s" x="440" y="384" text-anchor="middle">与模型 A 相比只有主干首层不同（130 对 162），其余三层逐层相同</text>
+  <text class="qn2-s" x="440" y="404" text-anchor="middle">两者的参数字典形状不同，权重不可互换</text>
+</svg>
+<div class="qrl-cap">图 2　模型 B（并排式融合）。两张感知图的潜变量各占主干输入中互不重叠的三十二列，主干首层可以对二者学出完全不同的权重，融合子网的职责被首层吸收因而被删除。环状图对应的那三十二列在初始化时置零，作用与模型 A 的融合子网末层零初始化相同：保证训练起点处新增通路不改变既有行为。</div>
+</div>
+
+<p>模型 B 删掉融合子网，改为把主干首层由 130 加宽到 162，让两张图各占独立的列：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>模型 A（130）  本体 0:53  | fused 53:85 |             | 特权 85:94  | latent 94:114 | yaw 114:130
 模型 B（162）  本体 0:53  | scan  53:85 | ring 85:117 | 特权117:126 | latent126:146 | yaw 146:162
-</code></pre></div></div> <p>从既有权重迁移到这个布局的映射是逐列直拷加零填充：本体与高程图两段直接搬过来， ring 所占的 32 列<strong>置零</strong>，其后的特权、历史、航向三段整体右移。 因此加宽之后的初始输出与加宽之前<strong>逐位相同</strong>，热启动没有代价。</p> <p>诊断指标也随之改变。模型 A 有融合残差可以观察，模型 B 没有， 改为观察主干首层中两张图各自所占列的<strong>范数</strong>，用二者的比值反映网络对环状图的依赖程度。</p> <div class="qrl-note"> 两个变体除首层外的三层主干<strong>逐层相同</strong>，Critic 也完全相同。 也就是说全部差异集中在「两张图如何进入主干」这一个位置上。 </div> <hr> <h2 id="五其余分支特权历史与航向">五、其余分支：特权、历史与航向</h2> <div class="qrl-tbl"> <table> <thead> <tr> <th>模块</th> <th>输入</th> <th>输出</th> <th>使用时机</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">priv_encoder</code></td> <td>29 维隐式特权</td> <td>20 维</td> <td>训练路径。教师直接读取特权真值</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">history_encoder</code></td> <td>530 维历史（10 帧乘 53 维本体感受）</td> <td>20 维</td> <td>部署与蒸馏路径。仅依赖机载可得信息</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">yaw_encoder</code></td> <td>2 维航向误差</td> <td>16 维</td> <td>训练与部署均使用</td> </tr> </tbody> </table> </div> <p>前两者在前向过程中<strong>二选一</strong>：训练时走特权路径，部署与蒸馏时走历史路径。 两者的输出维度被<strong>强制相等</strong>（都是 20），这不是巧合——正因为形状一致， 才可以直接对二者做 L2 对齐，把「教师看特权信息」蒸馏成「学生只看历史」。 该对齐项的具体形式见第十二节。</p> <p>历史编码器的内部结构是「逐帧线性嵌入加一维时序卷积」：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[N, 10, 53]  逐帧 Linear(53, 30) + ELU
+</code></pre></div></div>
+
+<p>从既有权重迁移到这个布局的映射是逐列直拷加零填充：本体与高程图两段直接搬过来，
+ring 所占的 32 列<strong>置零</strong>，其后的特权、历史、航向三段整体右移。
+因此加宽之后的初始输出与加宽之前<strong>逐位相同</strong>，热启动没有代价。</p>
+
+<p>诊断指标也随之改变。模型 A 有融合残差可以观察，模型 B 没有，
+改为观察主干首层中两张图各自所占列的<strong>范数</strong>，用二者的比值反映网络对环状图的依赖程度。</p>
+
+<div class="qrl-note">
+  两个变体除首层外的三层主干<strong>逐层相同</strong>，Critic 也完全相同。
+  也就是说全部差异集中在「两张图如何进入主干」这一个位置上。
+</div>
+
+<hr>
+
+<h2 id="五其余分支特权历史与航向">五、其余分支：特权、历史与航向</h2>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>模块</th>
+        <th>输入</th>
+        <th>输出</th>
+        <th>使用时机</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">priv_encoder</code></td>
+        <td>29 维隐式特权</td>
+        <td>20 维</td>
+        <td>训练路径。教师直接读取特权真值</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">history_encoder</code></td>
+        <td>530 维历史（10 帧乘 53 维本体感受）</td>
+        <td>20 维</td>
+        <td>部署与蒸馏路径。仅依赖机载可得信息</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">yaw_encoder</code></td>
+        <td>2 维航向误差</td>
+        <td>16 维</td>
+        <td>训练与部署均使用</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>前两者在前向过程中<strong>二选一</strong>：训练时走特权路径，部署与蒸馏时走历史路径。
+两者的输出维度被<strong>强制相等</strong>（都是 20），这不是巧合——正因为形状一致，
+才可以直接对二者做 L2 对齐，把「教师看特权信息」蒸馏成「学生只看历史」。
+该对齐项的具体形式见第十二节。</p>
+
+<p>历史编码器的内部结构是「逐帧线性嵌入加一维时序卷积」：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[N, 10, 53]  逐帧 Linear(53, 30) + ELU
 [N, 30, 10]  Conv1d(30, 20, k=4, s=2) + ELU   时间长度 10 变 4
 [N, 20, 4]   Conv1d(20, 10, k=2, s=1) + ELU   时间长度 4 变 3
 [N, 30]      展平
 [N, 20]      Linear(30, 20) + ELU
-</code></pre></div></div> <div class="qrl-note"> <strong>历史编码器不能冻结。</strong>代码里有断言背书这一点。 它不只服务于蒸馏，PPO 训练期也会周期性走历史路径； 把它冻住会让那些批次的梯度断掉。 </div> <p>航向分支把 2 维航向误差单独编码成 16 维再拼进主干，是为治理「持续左偏航」问题引入的专用通路。 引入它的同时主干首层由 114 重建为 130。</p> <hr> <h2 id="六各-latent-的激活函数与值域">六、各 latent 的激活函数与值域</h2> <p>这张对照表解释了一个长期困惑：同样是 32 维潜变量， 为什么高程图分支始终稳定，而环状图分支<strong>既会塌缩到零、又会失控到过大</strong>。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>潜变量</th> <th style="text-align: right">维度</th> <th>末层激活</th> <th>值域</th> <th>实测尺度</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">scan_latent</code></td> <td style="text-align: right">32</td> <td><strong>Tanh</strong></td> <td> <strong>有界</strong>，−1 至 1</td> <td>天然稳定，从未失控</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">lidar_latent</code></td> <td style="text-align: right">32</td> <td><strong>ELU</strong></td> <td> <strong>无界</strong>，−1 至正无穷</td> <td>曾塌缩到 0，也曾失控到 2.69</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">priv_latent</code></td> <td style="text-align: right">20</td> <td>ELU</td> <td>无界</td> <td>—</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">hist_latent</code></td> <td style="text-align: right">20</td> <td>ELU</td> <td>无界</td> <td>从零重训基线中实测塌缩到 0.001</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">yaw_latent</code></td> <td style="text-align: right">16</td> <td>无（裸线性层）</td> <td>无界</td> <td>—</td> </tr> <tr> <td>Critic 的 scan 潜变量</td> <td style="text-align: right">32</td> <td>无（裸线性层）</td> <td>无界</td> <td>—</td> </tr> <tr> <td>Critic 的 ring 潜变量</td> <td style="text-align: right">32</td> <td>无（裸线性层）</td> <td>无界</td> <td>健康，标准差 0.382</td> </tr> </tbody> </table> </div> <div class="qrl-key"> <p>高程图编码器末层的 Tanh 把输出夹在有界区间内，<strong>尺度天然受控</strong>； 即使发生塌缩，还有自监督重建把它拉回来。</p> <p>环状图编码器末层是 ELU，<strong>输出没有上界</strong>，因此两个方向都可能发散： 梯度断了就塌缩到零，自监督回传过强就冲到过大。</p> </div> <p>从零重训基线中的三项修复，本质上都是在<strong>替代 Tanh 的角色</strong>： 切断该分支的自监督回传，使它没有冲高的动力；对潜变量标准差超过 1.8 设告警， 用于事后发现；以及一项方差匹配项，软性地把潜变量拉向标准正态。</p> <div class="qrl-note"> 一个没有采纳的方案是把环状图编码器的末层激活也换成 Tanh。 技术上这很可能从根源上避免这一系列问题，但改末层激活会让<strong>所有历史权重失效</strong>， 属于不可回退的改动，因此没有实施。这是一处明确的取舍，不是遗漏。 </div> <hr> <h2 id="七critic瘦身输入">七、Critic：瘦身输入</h2> <p>Critic 在两个变体之间<strong>完全共用</strong>，形状一致，权重可以跨变体、跨版本全量直拷。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>项</th> <th>值</th> </tr> </thead> <tbody> <tr> <td>输入</td> <td> <strong>155</strong> 维，不是完整的 1473 维</td> </tr> <tr> <td>组成</td> <td>本体 53、scan 潜变量 32、ring 潜变量 32、显式特权 9、隐式特权 29</td> </tr> <tr> <td>主体</td> <td> <code class="language-plaintext highlighter-rouge">Linear(155, 256)</code> 加 <code class="language-plaintext highlighter-rouge">Linear(256, 128)</code> 加 <code class="language-plaintext highlighter-rouge">Linear(128, 1)</code> </td> </tr> <tr> <td>输出</td> <td>1 维状态价值</td> </tr> </tbody> </table> </div> <p>Critic <strong>有自己独立的编码器</strong>，不与 Actor 共享，而且结构也不同： Critic 侧的两个编码器都是多层感知机（132 - 128 - 32 与 720 - 256 - 32，末层不加激活）， 而 Actor 侧的环状图编码器是二维卷积网络。</p> <p>155 维这个口径的来源是：原始 Critic 直接吃 1473 维裸观测，其中 530 维历史 对<strong>估值</strong>几乎无用，却让参数量大幅膨胀。瘦身之后价值损失收敛更快、更稳。 该行为可由一个开关退回到旧口径。</p> <div class="qrl-key"> 这里有一处结构差异，是第十节分析梯度供给的前提： <strong>Critic 的两个编码器，输出都直接拼进 155 维输入，中间没有任何零初始化层。</strong> Actor 一侧则不是这样，其后果见第十节。 </div> <p>「Critic 为什么不应该接收原始感知图」这个论证属于 <a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 6.4 节，此处不重复。</p> <h2 id="八初始化三处零初始化">八、初始化：三处零初始化</h2> <div class="qrl-tbl"> <table> <thead> <tr> <th>位置</th> <th>适用变体</th> <th>目的</th> </tr> </thead> <tbody> <tr> <td>融合子网末层的权重与偏置</td> <td>模型 A</td> <td>初始残差为 0，<code class="language-plaintext highlighter-rouge">fused</code> 恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code> </td> </tr> <tr> <td>主干首层中 ring 所占的第 85 至 117 列</td> <td>模型 B</td> <td>初始时 ring 列的贡献为 0</td> </tr> <tr> <td>动作噪声标准差初值 <code class="language-plaintext highlighter-rouge">INIT_STD = 0.6</code> </td> <td>共用</td> <td>探索强度的起点</td> </tr> </tbody> </table> </div> <p>前两处的统一目的是：<strong>让新增分支在初始时完全不影响已有行为</strong>， 使热启动的第一步与上一代权重逐位相同，避免新增结构扰动已经收敛的策略。</p> <p>两个变体都有<strong>硬断言</strong>保护这个前提：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>变体</th> <th>断言内容</th> </tr> </thead> <tbody> <tr> <td>模型 A</td> <td>融合子网末层是否为零，<strong>以及门控层是否在位</strong> </td> </tr> <tr> <td>模型 B</td> <td>ring 列是否全零，以及该变体是否确实不含融合子网</td> </tr> </tbody> </table> </div> <div class="qrl-key"> 模型 A 的断言把「门控是否在位」也列为启动检查项，理由是： <strong>门控缺失等价于捷径恢复</strong>，而这个状态<strong>无法从训练曲线上观察出来</strong> ——曲线看起来一切正常，只是环状图那一路悄悄失效了。 这类「不会报错、也不会体现在指标上」的失效，只能在启动时立即断言。 </div> <div class="qrl-note"> <strong>一个反直觉的发现。</strong>零初始化在<strong>热启动</strong>条件下是安全的先验， 但在<strong>从零训练</strong>条件下会让环状图编码器永远拿不到梯度—— 这一现象称为<strong>梯度饥饿</strong>（gradient starvation），推导见第十节。 从零重训基线因此把模型 A 的融合子网末层改为「默认初始化乘以 0.01 的缩放」， 即接近零但不为零；<strong>偏置仍保持为零</strong>，因为非零偏置意味着一个与输入无关的常数残差， 那正是要避免的退化解。 </div> <hr> <h2 id="九自监督重建四个头">九、自监督重建：四个头</h2> <p>自监督重建的<strong>目的</strong>是给编码器一个<strong>不依赖 PPO 回报</strong>的梯度来源，用以抑制潜变量塌缩。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>编号</th> <th>头</th> <th>编码器</th> <th>解码器</th> <th>重建目标</th> </tr> </thead> <tbody> <tr> <td>①</td> <td>高程图 Actor 侧</td> <td><code class="language-plaintext highlighter-rouge">actor.scan_encoder</code></td> <td>32 - 128 - 132</td> <td>132 维高程图</td> </tr> <tr> <td>②</td> <td>高程图 Critic 侧</td> <td><code class="language-plaintext highlighter-rouge">critic.scan_enc</code></td> <td>32 - 128 - 132</td> <td>同上</td> </tr> <tr> <td>③</td> <td>环状图 Actor 侧</td> <td><code class="language-plaintext highlighter-rouge">actor.lidar_encoder</code></td> <td>32 - 256 - 720</td> <td>720 维环状距离图</td> </tr> <tr> <td>④</td> <td>环状图 Critic 侧</td> <td><code class="language-plaintext highlighter-rouge">critic.ring_enc</code></td> <td>32 - 256 - 720</td> <td>同上</td> </tr> </tbody> </table> </div> <div class="qrl-key"> <p><strong>第 30 版只有 ① 与 ②，没有 ③ 与 ④</strong>，后两个是从零重训基线才补上的。</p> <p>环状图首次接入观测的那一版把观测由 753 维扩到 1473 维， <strong>却没有同时加回配套的自监督</strong>——这是那一版著名失败 （环状图潜变量标准差恒为零）的直接原因。</p> </div> <p>超参：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> </tr> </thead> <tbody> <tr> <td>解码器隐藏层</td> <td>单层 128</td> </tr> <tr> <td>学习率</td> <td>1.0e-4</td> </tr> <tr> <td>批大小</td> <td>4096</td> </tr> <tr> <td>梯度裁剪</td> <td>1.0（独立于主更新）</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">ACTOR_RECON_TRAIN_ENCODER</code></td> <td><strong>True</strong></td> </tr> </tbody> </table> </div> <p>最后一项是关键：<strong>重建梯度必须穿透到编码器</strong>。若只训练解码器， 结果是解码器学会了由一个塌缩的常数反推高程图，而编码器仍然是塌缩的，等于没做。</p> <p>四个设计点：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>设计</th> <th>理由</th> </tr> </thead> <tbody> <tr> <td>使用<strong>独立优化器</strong> </td> <td>避免自监督梯度污染主优化器的动量与二阶矩估计</td> </tr> <tr> <td>使用<strong>独立梯度裁剪</strong> </td> <td>两种目标的梯度尺度不同，共用一个裁剪阈值会互相干扰</td> </tr> <tr> <td>在主更新<strong>之后</strong>执行</td> <td>若放在之前，PPO 主更新会覆盖自监督刚调整过的编码器参数</td> </tr> <tr> <td>解码器<strong>惰性构建</strong> </td> <td>第一次调用时才创建，因此不进入检查点</td> </tr> </tbody> </table> </div> <div class="qrl-note"> 惰性构建有一个代价：续训时解码器是全新的随机权重，初始重建误差很高， 而这个误差会经由编码器扰动一份已经训练好的表示。 从零重训基线为此加入了 50 次更新的预热期，其间只训练解码器、对编码器切断回传。 </div> <hr> <h2 id="十梯度从哪里来">十、梯度从哪里来</h2> <p>理解本项目历次事故的关键在于：<strong>不同模块的梯度来源完全不同</strong>。 有的模块有两路梯度，有的只有一路，有的在特定条件下一路也没有。</p> <div class="qrl-key"> <strong>先区分两种性质不同的失效，本项目里都发生过，很容易被混为一谈：</strong> <strong>捷径</strong>是「有梯度，但存在一条回报更快的路径把它绕开」， 解法是从结构上切断那条路径，即第 3.3 节的门控层； <strong>梯度饥饿</strong>是「回传路径上有一个零矩阵，根本没有梯度」， 解法是让那个矩阵不再严格为零，即第八节的缩放初始化。本节讲的是后者。 </div> <div class="qrl-svg"> <svg viewbox="0 0 880 420" role="img" aria-label="梯度回传路径示意：主损失分别流向主干与评论家；高程图编码器有主损失与自监督两路供给，评论家两个编码器的梯度直达，只有行动者一侧的环状图编码器要穿过零初始化的融合子网末层，成为唯一存在梯度饥饿风险的模块"> <defs> <style>
+</code></pre></div></div>
+
+<div class="qrl-note">
+  <strong>历史编码器不能冻结。</strong>代码里有断言背书这一点。
+  它不只服务于蒸馏，PPO 训练期也会周期性走历史路径；
+  把它冻住会让那些批次的梯度断掉。
+</div>
+
+<p>航向分支把 2 维航向误差单独编码成 16 维再拼进主干，是为治理「持续左偏航」问题引入的专用通路。
+引入它的同时主干首层由 114 重建为 130。</p>
+
+<hr>
+
+<h2 id="六各-latent-的激活函数与值域">六、各 latent 的激活函数与值域</h2>
+
+<p>这张对照表解释了一个长期困惑：同样是 32 维潜变量，
+为什么高程图分支始终稳定，而环状图分支<strong>既会塌缩到零、又会失控到过大</strong>。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>潜变量</th>
+        <th style="text-align: right">维度</th>
+        <th>末层激活</th>
+        <th>值域</th>
+        <th>实测尺度</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">scan_latent</code></td>
+        <td style="text-align: right">32</td>
+        <td><strong>Tanh</strong></td>
+        <td>
+<strong>有界</strong>，−1 至 1</td>
+        <td>天然稳定，从未失控</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">lidar_latent</code></td>
+        <td style="text-align: right">32</td>
+        <td><strong>ELU</strong></td>
+        <td>
+<strong>无界</strong>，−1 至正无穷</td>
+        <td>曾塌缩到 0，也曾失控到 2.69</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">priv_latent</code></td>
+        <td style="text-align: right">20</td>
+        <td>ELU</td>
+        <td>无界</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">hist_latent</code></td>
+        <td style="text-align: right">20</td>
+        <td>ELU</td>
+        <td>无界</td>
+        <td>从零重训基线中实测塌缩到 0.001</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">yaw_latent</code></td>
+        <td style="text-align: right">16</td>
+        <td>无（裸线性层）</td>
+        <td>无界</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Critic 的 scan 潜变量</td>
+        <td style="text-align: right">32</td>
+        <td>无（裸线性层）</td>
+        <td>无界</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>Critic 的 ring 潜变量</td>
+        <td style="text-align: right">32</td>
+        <td>无（裸线性层）</td>
+        <td>无界</td>
+        <td>健康，标准差 0.382</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  <p>高程图编码器末层的 Tanh 把输出夹在有界区间内，<strong>尺度天然受控</strong>；
+  即使发生塌缩，还有自监督重建把它拉回来。</p>
+  <p>环状图编码器末层是 ELU，<strong>输出没有上界</strong>，因此两个方向都可能发散：
+  梯度断了就塌缩到零，自监督回传过强就冲到过大。</p>
+</div>
+
+<p>从零重训基线中的三项修复，本质上都是在<strong>替代 Tanh 的角色</strong>：
+切断该分支的自监督回传，使它没有冲高的动力；对潜变量标准差超过 1.8 设告警，
+用于事后发现；以及一项方差匹配项，软性地把潜变量拉向标准正态。</p>
+
+<div class="qrl-note">
+  一个没有采纳的方案是把环状图编码器的末层激活也换成 Tanh。
+  技术上这很可能从根源上避免这一系列问题，但改末层激活会让<strong>所有历史权重失效</strong>，
+  属于不可回退的改动，因此没有实施。这是一处明确的取舍，不是遗漏。
+</div>
+
+<hr>
+
+<h2 id="七critic瘦身输入">七、Critic：瘦身输入</h2>
+
+<p>Critic 在两个变体之间<strong>完全共用</strong>，形状一致，权重可以跨变体、跨版本全量直拷。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>项</th>
+        <th>值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>输入</td>
+        <td>
+<strong>155</strong> 维，不是完整的 1473 维</td>
+      </tr>
+      <tr>
+        <td>组成</td>
+        <td>本体 53、scan 潜变量 32、ring 潜变量 32、显式特权 9、隐式特权 29</td>
+      </tr>
+      <tr>
+        <td>主体</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">Linear(155, 256)</code> 加 <code class="language-plaintext highlighter-rouge">Linear(256, 128)</code> 加 <code class="language-plaintext highlighter-rouge">Linear(128, 1)</code>
+</td>
+      </tr>
+      <tr>
+        <td>输出</td>
+        <td>1 维状态价值</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>Critic <strong>有自己独立的编码器</strong>，不与 Actor 共享，而且结构也不同：
+Critic 侧的两个编码器都是多层感知机（132 - 128 - 32 与 720 - 256 - 32，末层不加激活），
+而 Actor 侧的环状图编码器是二维卷积网络。</p>
+
+<p>155 维这个口径的来源是：原始 Critic 直接吃 1473 维裸观测，其中 530 维历史
+对<strong>估值</strong>几乎无用，却让参数量大幅膨胀。瘦身之后价值损失收敛更快、更稳。
+该行为可由一个开关退回到旧口径。</p>
+
+<div class="qrl-key">
+  这里有一处结构差异，是第十节分析梯度供给的前提：
+  <strong>Critic 的两个编码器，输出都直接拼进 155 维输入，中间没有任何零初始化层。</strong>
+  Actor 一侧则不是这样，其后果见第十节。
+</div>
+
+<p>「Critic 为什么不应该接收原始感知图」这个论证属于
+<a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 6.4 节，此处不重复。</p>
+
+<h2 id="八初始化三处零初始化">八、初始化：三处零初始化</h2>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>位置</th>
+        <th>适用变体</th>
+        <th>目的</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>融合子网末层的权重与偏置</td>
+        <td>模型 A</td>
+        <td>初始残差为 0，<code class="language-plaintext highlighter-rouge">fused</code> 恒等于 <code class="language-plaintext highlighter-rouge">scan_latent</code>
+</td>
+      </tr>
+      <tr>
+        <td>主干首层中 ring 所占的第 85 至 117 列</td>
+        <td>模型 B</td>
+        <td>初始时 ring 列的贡献为 0</td>
+      </tr>
+      <tr>
+        <td>动作噪声标准差初值 <code class="language-plaintext highlighter-rouge">INIT_STD = 0.6</code>
+</td>
+        <td>共用</td>
+        <td>探索强度的起点</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>前两处的统一目的是：<strong>让新增分支在初始时完全不影响已有行为</strong>，
+使热启动的第一步与上一代权重逐位相同，避免新增结构扰动已经收敛的策略。</p>
+
+<p>两个变体都有<strong>硬断言</strong>保护这个前提：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>变体</th>
+        <th>断言内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>模型 A</td>
+        <td>融合子网末层是否为零，<strong>以及门控层是否在位</strong>
+</td>
+      </tr>
+      <tr>
+        <td>模型 B</td>
+        <td>ring 列是否全零，以及该变体是否确实不含融合子网</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  模型 A 的断言把「门控是否在位」也列为启动检查项，理由是：
+  <strong>门控缺失等价于捷径恢复</strong>，而这个状态<strong>无法从训练曲线上观察出来</strong>
+  ——曲线看起来一切正常，只是环状图那一路悄悄失效了。
+  这类「不会报错、也不会体现在指标上」的失效，只能在启动时立即断言。
+</div>
+
+<div class="qrl-note">
+  <strong>一个反直觉的发现。</strong>零初始化在<strong>热启动</strong>条件下是安全的先验，
+  但在<strong>从零训练</strong>条件下会让环状图编码器永远拿不到梯度——
+  这一现象称为<strong>梯度饥饿</strong>（gradient starvation），推导见第十节。
+  从零重训基线因此把模型 A 的融合子网末层改为「默认初始化乘以 0.01 的缩放」，
+  即接近零但不为零；<strong>偏置仍保持为零</strong>，因为非零偏置意味着一个与输入无关的常数残差，
+  那正是要避免的退化解。
+</div>
+
+<hr>
+
+<h2 id="九自监督重建四个头">九、自监督重建：四个头</h2>
+
+<p>自监督重建的<strong>目的</strong>是给编码器一个<strong>不依赖 PPO 回报</strong>的梯度来源，用以抑制潜变量塌缩。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>头</th>
+        <th>编码器</th>
+        <th>解码器</th>
+        <th>重建目标</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>①</td>
+        <td>高程图 Actor 侧</td>
+        <td><code class="language-plaintext highlighter-rouge">actor.scan_encoder</code></td>
+        <td>32 - 128 - 132</td>
+        <td>132 维高程图</td>
+      </tr>
+      <tr>
+        <td>②</td>
+        <td>高程图 Critic 侧</td>
+        <td><code class="language-plaintext highlighter-rouge">critic.scan_enc</code></td>
+        <td>32 - 128 - 132</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td>③</td>
+        <td>环状图 Actor 侧</td>
+        <td><code class="language-plaintext highlighter-rouge">actor.lidar_encoder</code></td>
+        <td>32 - 256 - 720</td>
+        <td>720 维环状距离图</td>
+      </tr>
+      <tr>
+        <td>④</td>
+        <td>环状图 Critic 侧</td>
+        <td><code class="language-plaintext highlighter-rouge">critic.ring_enc</code></td>
+        <td>32 - 256 - 720</td>
+        <td>同上</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  <p><strong>第 30 版只有 ① 与 ②，没有 ③ 与 ④</strong>，后两个是从零重训基线才补上的。</p>
+  <p>环状图首次接入观测的那一版把观测由 753 维扩到 1473 维，
+  <strong>却没有同时加回配套的自监督</strong>——这是那一版著名失败
+  （环状图潜变量标准差恒为零）的直接原因。</p>
+</div>
+
+<p>超参：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>解码器隐藏层</td>
+        <td>单层 128</td>
+      </tr>
+      <tr>
+        <td>学习率</td>
+        <td>1.0e-4</td>
+      </tr>
+      <tr>
+        <td>批大小</td>
+        <td>4096</td>
+      </tr>
+      <tr>
+        <td>梯度裁剪</td>
+        <td>1.0（独立于主更新）</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">ACTOR_RECON_TRAIN_ENCODER</code></td>
+        <td><strong>True</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>最后一项是关键：<strong>重建梯度必须穿透到编码器</strong>。若只训练解码器，
+结果是解码器学会了由一个塌缩的常数反推高程图，而编码器仍然是塌缩的，等于没做。</p>
+
+<p>四个设计点：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>设计</th>
+        <th>理由</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>使用<strong>独立优化器</strong>
+</td>
+        <td>避免自监督梯度污染主优化器的动量与二阶矩估计</td>
+      </tr>
+      <tr>
+        <td>使用<strong>独立梯度裁剪</strong>
+</td>
+        <td>两种目标的梯度尺度不同，共用一个裁剪阈值会互相干扰</td>
+      </tr>
+      <tr>
+        <td>在主更新<strong>之后</strong>执行</td>
+        <td>若放在之前，PPO 主更新会覆盖自监督刚调整过的编码器参数</td>
+      </tr>
+      <tr>
+        <td>解码器<strong>惰性构建</strong>
+</td>
+        <td>第一次调用时才创建，因此不进入检查点</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-note">
+  惰性构建有一个代价：续训时解码器是全新的随机权重，初始重建误差很高，
+  而这个误差会经由编码器扰动一份已经训练好的表示。
+  从零重训基线为此加入了 50 次更新的预热期，其间只训练解码器、对编码器切断回传。
+</div>
+
+<hr>
+
+<h2 id="十梯度从哪里来">十、梯度从哪里来</h2>
+
+<p>理解本项目历次事故的关键在于：<strong>不同模块的梯度来源完全不同</strong>。
+有的模块有两路梯度，有的只有一路，有的在特定条件下一路也没有。</p>
+
+<div class="qrl-key">
+  <strong>先区分两种性质不同的失效，本项目里都发生过，很容易被混为一谈：</strong>
+  <strong>捷径</strong>是「有梯度，但存在一条回报更快的路径把它绕开」，
+  解法是从结构上切断那条路径，即第 3.3 节的门控层；
+  <strong>梯度饥饿</strong>是「回传路径上有一个零矩阵，根本没有梯度」，
+  解法是让那个矩阵不再严格为零，即第八节的缩放初始化。本节讲的是后者。
+</div>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 880 420" role="img" aria-label="梯度回传路径示意：主损失分别流向主干与评论家；高程图编码器有主损失与自监督两路供给，评论家两个编码器的梯度直达，只有行动者一侧的环状图编码器要穿过零初始化的融合子网末层，成为唯一存在梯度饥饿风险的模块">
+  <defs>
+    <style>
       .qn4-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn4-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn4-t{font-size:12px;fill:currentColor}
@@ -58,37 +2275,680 @@ Linear(64, 32)            末层权重与偏置均零初始化
       .qn4-a{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;marker-end:url(#qnarrow4)}
       .qn4-ah{stroke:var(--global-theme-color,#b509ac);stroke-width:1.6;fill:none;marker-end:url(#qnarrow4)}
       .qn4-d{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;stroke-dasharray:4 3;marker-end:url(#qnarrow4)}
-    </style> <marker id="qnarrow4" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path> </marker> </defs> <rect class="qn4-hi" x="300" y="14" width="280" height="36" rx="6"></rect> <text class="qn4-t" x="440" y="37" text-anchor="middle">PPO 主损失</text> <text class="qn4-s" x="20" y="30">箭头方向表示梯度回传方向</text> <path class="qn4-ah" d="M360,50 V78"></path> <path class="qn4-ah" d="M520,50 V78"></path> <rect class="qn4-box" x="150" y="80" width="290" height="44" rx="6"></rect> <text class="qn4-t" x="295" y="107" text-anchor="middle">actor_backbone</text> <rect class="qn4-box" x="470" y="80" width="290" height="44" rx="6"></rect> <text class="qn4-t" x="615" y="107" text-anchor="middle">critic MLP（155 - 1）</text> <path class="qn4-a" d="M200,124 V168"></path> <path class="qn4-a" d="M295,124 V168"></path> <path class="qn4-a" d="M390,124 V168"></path> <path class="qn4-a" d="M540,124 V214"></path> <path class="qn4-a" d="M690,124 V214"></path> <text class="qn4-s" x="200" y="140" text-anchor="middle">本体、特权、航向列</text> <text class="qn4-s" x="330" y="140" text-anchor="middle">fused 列</text> <rect class="qn4-box" x="120" y="170" width="160" height="46" rx="6"></rect> <text class="qn4-t" x="200" y="190" text-anchor="middle">scan_encoder</text> <text class="qn4-s" x="200" y="208" text-anchor="middle">主损失直达</text> <rect class="qn4-box" x="300" y="170" width="170" height="46" rx="6"></rect> <text class="qn4-t" x="385" y="190" text-anchor="middle">fusion_mlp</text> <text class="qn4-s" x="385" y="208" text-anchor="middle">自身梯度不为零，会长出来</text> <rect class="qn4-box" x="470" y="216" width="140" height="44" rx="6"></rect> <text class="qn4-t" x="540" y="234" text-anchor="middle">critic.scan_enc</text> <text class="qn4-s" x="540" y="251" text-anchor="middle">梯度直达</text> <rect class="qn4-box" x="620" y="216" width="140" height="44" rx="6"></rect> <text class="qn4-t" x="690" y="234" text-anchor="middle">critic.ring_enc</text> <text class="qn4-s" x="690" y="251" text-anchor="middle">梯度直达</text> <path class="qn4-ah" d="M385,216 V262"></path> <text class="qn4-s" x="500" y="248" text-anchor="middle">回传要乘末层权重的转置</text> <rect class="qn4-hi" x="300" y="264" width="170" height="52" rx="6"></rect> <text class="qn4-t" x="385" y="284" text-anchor="middle">actor.lidar_encoder</text> <text class="qn4-s" x="385" y="302" text-anchor="middle">末层零初始化，起点梯度严格为零</text> <rect class="qn4-box" x="60" y="264" width="200" height="52" rx="6"></rect> <text class="qn4-t" x="160" y="284" text-anchor="middle">高程图自监督重建</text> <text class="qn4-s" x="160" y="302" text-anchor="middle">第二路梯度供给</text> <path class="qn4-d" d="M160,264 V222 H198"></path> <text class="qn4-t" x="440" y="348" text-anchor="middle">全网络只有行动者一侧的环状图编码器同时满足两个条件：唯一入口、且该入口在起点处为零</text> <text class="qn4-t" x="440" y="370" text-anchor="middle">这就是历次潜变量塌缩事故都发生在这一个模块上的原因</text> <text class="qn4-s" x="440" y="396" text-anchor="middle">评论家一侧同一张环状图天生健康，因为它的输出直接拼进 155 维输入，中间没有零初始化层</text> </svg> <div class="qrl-cap">图 4　梯度回传路径。高程图编码器有主损失与自监督重建两路供给，评论家的两个编码器梯度直达，只有行动者一侧的环状图编码器要穿过零初始化的融合子网末层。零乘任何数仍是零，于是该模块在训练起点处拿不到梯度。</div> </div> <h3 id="101-逐模块的梯度来源">10.1 逐模块的梯度来源</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>模块</th> <th>PPO 主损失</th> <th>自监督重建</th> <th>梯度饥饿风险</th> <th>实测状态</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">actor.scan_encoder</code></td> <td>直达</td> <td>有（①）</td> <td>否，双路供给</td> <td>健康，重建误差 0.0085</td> </tr> <tr> <td><strong><code class="language-plaintext highlighter-rouge">actor.lidar_encoder</code></strong></td> <td><strong>要穿过融合子网</strong></td> <td>第 30 版无</td> <td><strong>是</strong></td> <td>曾两次塌缩</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor.fusion_mlp</code></td> <td>直达</td> <td>无</td> <td>否</td> <td>—</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor.priv_encoder</code></td> <td>直达</td> <td>无</td> <td>否</td> <td>—</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor.history_encoder</code></td> <td>直达</td> <td>无</td> <td>否</td> <td>从零重训基线中实测塌缩到 0.001</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor.yaw_encoder</code></td> <td>直达</td> <td>无</td> <td>否</td> <td>—</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor_backbone</code></td> <td>直达</td> <td>无</td> <td>否</td> <td>—</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">critic.scan_enc</code></td> <td>价值损失直达</td> <td>有（②）</td> <td>否，双路供给</td> <td>健康，重建误差 0.0100</td> </tr> <tr> <td><strong><code class="language-plaintext highlighter-rouge">critic.ring_enc</code></strong></td> <td><strong>价值损失直达</strong></td> <td>第 30 版无</td> <td><strong>否</strong></td> <td>健康，标准差 0.382</td> </tr> </tbody> </table> </div> <p>表中值得注意的是最后两行与第二行的对比：<strong>同一份环状距离图</strong>， 在 Critic 一侧天生健康，在 Actor 一侧天生饿死。差别只在于中间隔没隔一个零初始化层。</p> <h3 id="102-唯一会梯度饥饿的模块">10.2 唯一会梯度饥饿的模块</h3> <p>模型 A 中，从损失回传到环状图编码器的链路是：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>损失 → actor_backbone → fused → fusion_mlp → lidar_latent → lidar_encoder
+    </style>
+    <marker id="qnarrow4" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path>
+    </marker>
+  </defs>
+
+  <rect class="qn4-hi" x="300" y="14" width="280" height="36" rx="6"></rect>
+  <text class="qn4-t" x="440" y="37" text-anchor="middle">PPO 主损失</text>
+  <text class="qn4-s" x="20" y="30">箭头方向表示梯度回传方向</text>
+
+  <path class="qn4-ah" d="M360,50 V78"></path>
+  <path class="qn4-ah" d="M520,50 V78"></path>
+
+  <rect class="qn4-box" x="150" y="80" width="290" height="44" rx="6"></rect>
+  <text class="qn4-t" x="295" y="107" text-anchor="middle">actor_backbone</text>
+  <rect class="qn4-box" x="470" y="80" width="290" height="44" rx="6"></rect>
+  <text class="qn4-t" x="615" y="107" text-anchor="middle">critic MLP（155 - 1）</text>
+
+  <path class="qn4-a" d="M200,124 V168"></path>
+  <path class="qn4-a" d="M295,124 V168"></path>
+  <path class="qn4-a" d="M390,124 V168"></path>
+  <path class="qn4-a" d="M540,124 V214"></path>
+  <path class="qn4-a" d="M690,124 V214"></path>
+  <text class="qn4-s" x="200" y="140" text-anchor="middle">本体、特权、航向列</text>
+  <text class="qn4-s" x="330" y="140" text-anchor="middle">fused 列</text>
+
+  <rect class="qn4-box" x="120" y="170" width="160" height="46" rx="6"></rect>
+  <text class="qn4-t" x="200" y="190" text-anchor="middle">scan_encoder</text>
+  <text class="qn4-s" x="200" y="208" text-anchor="middle">主损失直达</text>
+
+  <rect class="qn4-box" x="300" y="170" width="170" height="46" rx="6"></rect>
+  <text class="qn4-t" x="385" y="190" text-anchor="middle">fusion_mlp</text>
+  <text class="qn4-s" x="385" y="208" text-anchor="middle">自身梯度不为零，会长出来</text>
+
+  <rect class="qn4-box" x="470" y="216" width="140" height="44" rx="6"></rect>
+  <text class="qn4-t" x="540" y="234" text-anchor="middle">critic.scan_enc</text>
+  <text class="qn4-s" x="540" y="251" text-anchor="middle">梯度直达</text>
+  <rect class="qn4-box" x="620" y="216" width="140" height="44" rx="6"></rect>
+  <text class="qn4-t" x="690" y="234" text-anchor="middle">critic.ring_enc</text>
+  <text class="qn4-s" x="690" y="251" text-anchor="middle">梯度直达</text>
+
+  <path class="qn4-ah" d="M385,216 V262"></path>
+  <text class="qn4-s" x="500" y="248" text-anchor="middle">回传要乘末层权重的转置</text>
+
+  <rect class="qn4-hi" x="300" y="264" width="170" height="52" rx="6"></rect>
+  <text class="qn4-t" x="385" y="284" text-anchor="middle">actor.lidar_encoder</text>
+  <text class="qn4-s" x="385" y="302" text-anchor="middle">末层零初始化，起点梯度严格为零</text>
+
+  <rect class="qn4-box" x="60" y="264" width="200" height="52" rx="6"></rect>
+  <text class="qn4-t" x="160" y="284" text-anchor="middle">高程图自监督重建</text>
+  <text class="qn4-s" x="160" y="302" text-anchor="middle">第二路梯度供给</text>
+  <path class="qn4-d" d="M160,264 V222 H198"></path>
+
+<text class="qn4-t" x="440" y="348" text-anchor="middle">全网络只有行动者一侧的环状图编码器同时满足两个条件：唯一入口、且该入口在起点处为零</text>
+<text class="qn4-t" x="440" y="370" text-anchor="middle">这就是历次潜变量塌缩事故都发生在这一个模块上的原因</text>
+<text class="qn4-s" x="440" y="396" text-anchor="middle">评论家一侧同一张环状图天生健康，因为它的输出直接拼进 155 维输入，中间没有零初始化层</text>
+</svg>
+<div class="qrl-cap">图 4　梯度回传路径。高程图编码器有主损失与自监督重建两路供给，评论家的两个编码器梯度直达，只有行动者一侧的环状图编码器要穿过零初始化的融合子网末层。零乘任何数仍是零，于是该模块在训练起点处拿不到梯度。</div>
+</div>
+
+<h3 id="101-逐模块的梯度来源">10.1 逐模块的梯度来源</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>模块</th>
+        <th>PPO 主损失</th>
+        <th>自监督重建</th>
+        <th>梯度饥饿风险</th>
+        <th>实测状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor.scan_encoder</code></td>
+        <td>直达</td>
+        <td>有（①）</td>
+        <td>否，双路供给</td>
+        <td>健康，重建误差 0.0085</td>
+      </tr>
+      <tr>
+        <td><strong><code class="language-plaintext highlighter-rouge">actor.lidar_encoder</code></strong></td>
+        <td><strong>要穿过融合子网</strong></td>
+        <td>第 30 版无</td>
+        <td><strong>是</strong></td>
+        <td>曾两次塌缩</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor.fusion_mlp</code></td>
+        <td>直达</td>
+        <td>无</td>
+        <td>否</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor.priv_encoder</code></td>
+        <td>直达</td>
+        <td>无</td>
+        <td>否</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor.history_encoder</code></td>
+        <td>直达</td>
+        <td>无</td>
+        <td>否</td>
+        <td>从零重训基线中实测塌缩到 0.001</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor.yaw_encoder</code></td>
+        <td>直达</td>
+        <td>无</td>
+        <td>否</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor_backbone</code></td>
+        <td>直达</td>
+        <td>无</td>
+        <td>否</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">critic.scan_enc</code></td>
+        <td>价值损失直达</td>
+        <td>有（②）</td>
+        <td>否，双路供给</td>
+        <td>健康，重建误差 0.0100</td>
+      </tr>
+      <tr>
+        <td><strong><code class="language-plaintext highlighter-rouge">critic.ring_enc</code></strong></td>
+        <td><strong>价值损失直达</strong></td>
+        <td>第 30 版无</td>
+        <td><strong>否</strong></td>
+        <td>健康，标准差 0.382</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>表中值得注意的是最后两行与第二行的对比：<strong>同一份环状距离图</strong>，
+在 Critic 一侧天生健康，在 Actor 一侧天生饿死。差别只在于中间隔没隔一个零初始化层。</p>
+
+<h3 id="102-唯一会梯度饥饿的模块">10.2 唯一会梯度饥饿的模块</h3>
+
+<p>模型 A 中，从损失回传到环状图编码器的链路是：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>损失 → actor_backbone → fused → fusion_mlp → lidar_latent → lidar_encoder
                                      ↑
                             末层权重零初始化
-</code></pre></div></div> <p>回传到编码器的梯度<strong>要乘以融合子网末层权重的转置</strong>。末层零初始化， 因此训练起点处<strong>该梯度严格为零</strong>。</p> <p>而融合子网末层<strong>自身</strong>的梯度并不为零（它正比于上游梯度与输入激活的外积）， 所以它会自己长出来。<strong>这个阻断是单向的：只有编码器一侧发生梯度饥饿。</strong></p> <p>这解释了两件此前难以解释的事：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>条件</th> <th>融合子网末层</th> <th>环状图潜变量标准差</th> <th>融合残差比</th> </tr> </thead> <tbody> <tr> <td>第 30 版（热启动，末层由检查点直拷，<strong>非零</strong>）</td> <td>非零</td> <td>0.068 → 0.392 → <strong>1.77</strong> </td> <td>1.86 → 2.01</td> </tr> <tr> <td>从零重训基线首轮（模型 A，末层<strong>严格为零</strong>）</td> <td>零</td> <td><strong>恒为 0.0000</strong></td> <td>0.123（常数偏置）</td> </tr> </tbody> </table> </div> <div class="qrl-key"> 两者的潜变量标准差<strong>都是从 0.068 附近起步的</strong>， 区别只在于融合子网末层是否为零。热启动之所以没有这个问题， 是因为它继承的末层已经被此前若干版训练了几千轮，早已不是零矩阵，闭环第一轮就能打通。 </div> <p>从零重训基线首轮中，模型 A 的告警计数达到 86 次，塌缩连续计数超过 505。</p> <h3 id="模型-b-为什么不同">模型 B 为什么不同</h3> <p>模型 B 没有融合子网，环状图潜变量<strong>直接进入主干首层</strong>：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>损失 → actor_backbone 首层的 ring 列 → ring_latent → lidar_encoder
-</code></pre></div></div> <p>首层的 ring 列虽然同样是零初始化，但它是<strong>主干的一部分</strong>， 与本体、高程图、特权、历史、航向各列<strong>共享同一次前向</strong>，梯度环境完全不同。 实测模型 B 的潜变量标准差能从 0.054 自行增长到 1.1，且该次运行全程没有启用自监督。</p> <div class="qrl-note"> 因此模型 B 不需要自监督提供额外的梯度供给。 从零重训基线中「并排式不回传自监督」这一配置选择正是基于这条实测依据。 这里陈述的是两种结构在梯度供给上的机制差异，<strong>不构成对两者优劣的判断</strong>。 </div> <hr> <h2 id="十一五个独立优化器">十一、五个独立优化器</h2> <h3 id="111-分组与作用范围">11.1 分组与作用范围</h3> <p>这是一个容易被忽视的设计：<strong>并非所有参数都由同一个优化器管</strong>。</p> <div class="qrl-svg"> <svg viewbox="0 0 860 430" role="img" aria-label="五个独立优化器的作用范围：主优化器管行动者与评论家全部参数，其余四个分别管状态估计器、历史编码器、高程图行动者侧自监督与评论家侧自监督"> <defs> <style>
+</code></pre></div></div>
+
+<p>回传到编码器的梯度<strong>要乘以融合子网末层权重的转置</strong>。末层零初始化，
+因此训练起点处<strong>该梯度严格为零</strong>。</p>
+
+<p>而融合子网末层<strong>自身</strong>的梯度并不为零（它正比于上游梯度与输入激活的外积），
+所以它会自己长出来。<strong>这个阻断是单向的：只有编码器一侧发生梯度饥饿。</strong></p>
+
+<p>这解释了两件此前难以解释的事：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>条件</th>
+        <th>融合子网末层</th>
+        <th>环状图潜变量标准差</th>
+        <th>融合残差比</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>第 30 版（热启动，末层由检查点直拷，<strong>非零</strong>）</td>
+        <td>非零</td>
+        <td>0.068 → 0.392 → <strong>1.77</strong>
+</td>
+        <td>1.86 → 2.01</td>
+      </tr>
+      <tr>
+        <td>从零重训基线首轮（模型 A，末层<strong>严格为零</strong>）</td>
+        <td>零</td>
+        <td><strong>恒为 0.0000</strong></td>
+        <td>0.123（常数偏置）</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  两者的潜变量标准差<strong>都是从 0.068 附近起步的</strong>，
+  区别只在于融合子网末层是否为零。热启动之所以没有这个问题，
+  是因为它继承的末层已经被此前若干版训练了几千轮，早已不是零矩阵，闭环第一轮就能打通。
+</div>
+
+<p>从零重训基线首轮中，模型 A 的告警计数达到 86 次，塌缩连续计数超过 505。</p>
+
+<h3 id="模型-b-为什么不同">模型 B 为什么不同</h3>
+
+<p>模型 B 没有融合子网，环状图潜变量<strong>直接进入主干首层</strong>：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>损失 → actor_backbone 首层的 ring 列 → ring_latent → lidar_encoder
+</code></pre></div></div>
+
+<p>首层的 ring 列虽然同样是零初始化，但它是<strong>主干的一部分</strong>，
+与本体、高程图、特权、历史、航向各列<strong>共享同一次前向</strong>，梯度环境完全不同。
+实测模型 B 的潜变量标准差能从 0.054 自行增长到 1.1，且该次运行全程没有启用自监督。</p>
+
+<div class="qrl-note">
+  因此模型 B 不需要自监督提供额外的梯度供给。
+  从零重训基线中「并排式不回传自监督」这一配置选择正是基于这条实测依据。
+  这里陈述的是两种结构在梯度供给上的机制差异，<strong>不构成对两者优劣的判断</strong>。
+</div>
+
+<hr>
+
+<h2 id="十一五个独立优化器">十一、五个独立优化器</h2>
+
+<h3 id="111-分组与作用范围">11.1 分组与作用范围</h3>
+
+<p>这是一个容易被忽视的设计：<strong>并非所有参数都由同一个优化器管</strong>。</p>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 860 430" role="img" aria-label="五个独立优化器的作用范围：主优化器管行动者与评论家全部参数，其余四个分别管状态估计器、历史编码器、高程图行动者侧自监督与评论家侧自监督">
+  <defs>
+    <style>
       .qn5-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn5-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn5-t{font-size:12px;fill:currentColor}
       .qn5-s{font-size:10.5px;fill:currentColor;opacity:.7}
       .qn5-a{stroke:var(--global-theme-color,#b509ac);stroke-width:1.4;fill:none;marker-end:url(#qnarrow5)}
-    </style> <marker id="qnarrow5" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-theme-color,#b509ac)"></path> </marker> </defs> <rect class="qn5-hi" x="14" y="12" width="832" height="86" rx="7"></rect> <text class="qn5-t" x="30" y="34">① 主优化器　Adam，学习率 2e-4 自适应，梯度范数裁剪 1.0</text> <text class="qn5-s" x="30" y="56">管：策略的全部参数，即行动者全部加评论家全部</text> <text class="qn5-s" x="30" y="74">scan_encoder　lidar_encoder　fusion_mlp　priv_encoder　history_encoder　yaw_encoder　actor_backbone</text> <text class="qn5-s" x="30" y="90">critic.scan_enc　critic.ring_enc　critic MLP</text> <rect class="qn5-box" x="14" y="112" width="410" height="62" rx="7"></rect> <text class="qn5-t" x="30" y="134">② 状态估计器优化器　Adam，学习率 1e-4</text> <text class="qn5-s" x="30" y="154">管：状态估计器（53 - 128 - 64 - 9）</text> <text class="qn5-s" x="30" y="168">每个小批次更新一次，先于主损失</text> <rect class="qn5-box" x="436" y="112" width="410" height="62" rx="7"></rect> <text class="qn5-t" x="452" y="134">③ 历史编码器优化器　Adam，学习率 2e-4</text> <text class="qn5-s" x="452" y="154">管：行动者的历史编码器</text> <text class="qn5-s" x="452" y="168">按既定的更新间隔触发</text> <rect class="qn5-hi" x="14" y="188" width="410" height="66" rx="7"></rect> <text class="qn5-t" x="30" y="210">④ 高程图行动者侧自监督　Adam，学习率 1e-4，裁剪 1.0</text> <text class="qn5-s" x="30" y="230">管：解码器（32 - 128 - 132）</text> <text class="qn5-s" x="30" y="246">以及 actor.scan_encoder，编码器也在这个优化器里</text> <rect class="qn5-box" x="436" y="188" width="410" height="66" rx="7"></rect> <text class="qn5-t" x="452" y="210">⑤ 高程图评论家侧自监督　Adam，学习率 1e-4，裁剪 1.0</text> <text class="qn5-s" x="452" y="230">管：解码器（32 - 128 - 132）</text> <text class="qn5-s" x="452" y="246">以及 critic.scan_enc</text> <path class="qn5-a" d="M200,98 V186"></path> <path class="qn5-a" d="M330,254 V282"></path> <text class="qn5-s" x="120" y="146" text-anchor="middle">同一个模块</text> <text class="qn5-s" x="120" y="162" text-anchor="middle">被两个优化器更新</text> <rect class="qn5-hi" x="120" y="284" width="620" height="66" rx="7"></rect> <text class="qn5-t" x="430" y="306" text-anchor="middle">scan_encoder 同时由 ① 与 ④ 更新</text> <text class="qn5-s" x="430" y="326" text-anchor="middle">主损失负责学出对决策有效的特征表示，自监督重建负责抑制表示塌缩</text> <text class="qn5-s" x="430" y="342" text-anchor="middle">二者使用彼此独立的优化器</text> <text class="qn5-t" x="430" y="382" text-anchor="middle">拆成独立优化器的理由：避免自监督梯度污染主优化器的一阶与二阶矩估计</text> <text class="qn5-s" x="430" y="406" text-anchor="middle">Adam 的动量项按参数逐个累积，两种目标混在同一个优化器里会互相干扰各自的自适应步长</text> </svg> <div class="qrl-cap">图 5　五个独立优化器的作用范围。高程图编码器被主优化器与自监督优化器共同更新，是全网络唯一由两个优化器同时管辖的模块；把它们拆开而不是合成一个加权损失，是为了让两种目标各自维持独立的一阶与二阶矩估计。</div> </div> <div class="qrl-tbl"> <table> <thead> <tr> <th>编号</th> <th>优化器</th> <th>管什么</th> <th>学习率</th> <th>何时更新</th> <th>梯度裁剪</th> </tr> </thead> <tbody> <tr> <td>1</td> <td>主优化器</td> <td>策略全部参数，即 Actor 全部加 Critic 全部</td> <td>2.0e-4，自适应</td> <td>每个小批次</td> <td>1.0</td> </tr> <tr> <td>2</td> <td>状态估计器优化器</td> <td>状态估计器</td> <td>1.0e-4</td> <td>每个小批次，<strong>先于</strong>主损失</td> <td>按最大梯度范数</td> </tr> <tr> <td>3</td> <td>历史编码器优化器</td> <td><code class="language-plaintext highlighter-rouge">actor.history_encoder</code></td> <td>与主优化器相同</td> <td>按更新间隔 20 触发</td> <td>—</td> </tr> <tr> <td>4</td> <td>高程图 Actor 侧自监督</td> <td>解码器<strong>以及</strong> <code class="language-plaintext highlighter-rouge">actor.scan_encoder</code> </td> <td>1.0e-4</td> <td>主更新<strong>之后</strong> </td> <td>1.0</td> </tr> <tr> <td>5</td> <td>高程图 Critic 侧自监督</td> <td>解码器<strong>以及</strong> <code class="language-plaintext highlighter-rouge">critic.scan_enc</code> </td> <td>1.0e-4</td> <td>主更新<strong>之后</strong> </td> <td>1.0</td> </tr> </tbody> </table> </div> <p>从零重训基线另外增加了第 6、第 7 两个，用于环状图两侧的自监督，学习率同为 1.0e-4， 批大小 4096；第 30 版没有这两个。</p> <div class="qrl-key"> <p><strong>高程图编码器同时被 1 号与 4 号更新</strong>，是全网络唯一由两个优化器共同管辖的模块。 这是有意的双路供给：主损失负责学出对决策有效的特征表示，自监督重建负责抑制表示塌缩。</p> <p><strong>为什么要拆成独立优化器而不是合成一个加权损失：</strong> Adam 的一阶与二阶矩估计是按参数逐个累积的。两种目标的梯度尺度与更新频率 完全不同，混在同一个优化器里会让主更新的自适应步长失真。</p> </div> <h3 id="112-自适应学习率">11.2 自适应学习率</h3> <p>学习率不是预设的曲线，而是被新旧策略之间的 KL 散度牵着走：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>若 KL 均值 &gt; 目标 KL 的 2 倍：   lr = max(1e-5, lr / 1.5)
+    </style>
+    <marker id="qnarrow5" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-theme-color,#b509ac)"></path>
+    </marker>
+  </defs>
+
+  <rect class="qn5-hi" x="14" y="12" width="832" height="86" rx="7"></rect>
+  <text class="qn5-t" x="30" y="34">① 主优化器　Adam，学习率 2e-4 自适应，梯度范数裁剪 1.0</text>
+  <text class="qn5-s" x="30" y="56">管：策略的全部参数，即行动者全部加评论家全部</text>
+  <text class="qn5-s" x="30" y="74">scan_encoder　lidar_encoder　fusion_mlp　priv_encoder　history_encoder　yaw_encoder　actor_backbone</text>
+  <text class="qn5-s" x="30" y="90">critic.scan_enc　critic.ring_enc　critic MLP</text>
+
+  <rect class="qn5-box" x="14" y="112" width="410" height="62" rx="7"></rect>
+  <text class="qn5-t" x="30" y="134">② 状态估计器优化器　Adam，学习率 1e-4</text>
+  <text class="qn5-s" x="30" y="154">管：状态估计器（53 - 128 - 64 - 9）</text>
+  <text class="qn5-s" x="30" y="168">每个小批次更新一次，先于主损失</text>
+
+  <rect class="qn5-box" x="436" y="112" width="410" height="62" rx="7"></rect>
+  <text class="qn5-t" x="452" y="134">③ 历史编码器优化器　Adam，学习率 2e-4</text>
+  <text class="qn5-s" x="452" y="154">管：行动者的历史编码器</text>
+  <text class="qn5-s" x="452" y="168">按既定的更新间隔触发</text>
+
+  <rect class="qn5-hi" x="14" y="188" width="410" height="66" rx="7"></rect>
+  <text class="qn5-t" x="30" y="210">④ 高程图行动者侧自监督　Adam，学习率 1e-4，裁剪 1.0</text>
+  <text class="qn5-s" x="30" y="230">管：解码器（32 - 128 - 132）</text>
+  <text class="qn5-s" x="30" y="246">以及 actor.scan_encoder，编码器也在这个优化器里</text>
+
+  <rect class="qn5-box" x="436" y="188" width="410" height="66" rx="7"></rect>
+  <text class="qn5-t" x="452" y="210">⑤ 高程图评论家侧自监督　Adam，学习率 1e-4，裁剪 1.0</text>
+  <text class="qn5-s" x="452" y="230">管：解码器（32 - 128 - 132）</text>
+  <text class="qn5-s" x="452" y="246">以及 critic.scan_enc</text>
+
+  <path class="qn5-a" d="M200,98 V186"></path>
+  <path class="qn5-a" d="M330,254 V282"></path>
+  <text class="qn5-s" x="120" y="146" text-anchor="middle">同一个模块</text>
+  <text class="qn5-s" x="120" y="162" text-anchor="middle">被两个优化器更新</text>
+
+  <rect class="qn5-hi" x="120" y="284" width="620" height="66" rx="7"></rect>
+  <text class="qn5-t" x="430" y="306" text-anchor="middle">scan_encoder 同时由 ① 与 ④ 更新</text>
+  <text class="qn5-s" x="430" y="326" text-anchor="middle">主损失负责学出对决策有效的特征表示，自监督重建负责抑制表示塌缩</text>
+  <text class="qn5-s" x="430" y="342" text-anchor="middle">二者使用彼此独立的优化器</text>
+
+<text class="qn5-t" x="430" y="382" text-anchor="middle">拆成独立优化器的理由：避免自监督梯度污染主优化器的一阶与二阶矩估计</text>
+<text class="qn5-s" x="430" y="406" text-anchor="middle">Adam 的动量项按参数逐个累积，两种目标混在同一个优化器里会互相干扰各自的自适应步长</text>
+</svg>
+<div class="qrl-cap">图 5　五个独立优化器的作用范围。高程图编码器被主优化器与自监督优化器共同更新，是全网络唯一由两个优化器同时管辖的模块；把它们拆开而不是合成一个加权损失，是为了让两种目标各自维持独立的一阶与二阶矩估计。</div>
+</div>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>优化器</th>
+        <th>管什么</th>
+        <th>学习率</th>
+        <th>何时更新</th>
+        <th>梯度裁剪</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>主优化器</td>
+        <td>策略全部参数，即 Actor 全部加 Critic 全部</td>
+        <td>2.0e-4，自适应</td>
+        <td>每个小批次</td>
+        <td>1.0</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>状态估计器优化器</td>
+        <td>状态估计器</td>
+        <td>1.0e-4</td>
+        <td>每个小批次，<strong>先于</strong>主损失</td>
+        <td>按最大梯度范数</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>历史编码器优化器</td>
+        <td><code class="language-plaintext highlighter-rouge">actor.history_encoder</code></td>
+        <td>与主优化器相同</td>
+        <td>按更新间隔 20 触发</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>高程图 Actor 侧自监督</td>
+        <td>解码器<strong>以及</strong> <code class="language-plaintext highlighter-rouge">actor.scan_encoder</code>
+</td>
+        <td>1.0e-4</td>
+        <td>主更新<strong>之后</strong>
+</td>
+        <td>1.0</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>高程图 Critic 侧自监督</td>
+        <td>解码器<strong>以及</strong> <code class="language-plaintext highlighter-rouge">critic.scan_enc</code>
+</td>
+        <td>1.0e-4</td>
+        <td>主更新<strong>之后</strong>
+</td>
+        <td>1.0</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>从零重训基线另外增加了第 6、第 7 两个，用于环状图两侧的自监督，学习率同为 1.0e-4，
+批大小 4096；第 30 版没有这两个。</p>
+
+<div class="qrl-key">
+  <p><strong>高程图编码器同时被 1 号与 4 号更新</strong>，是全网络唯一由两个优化器共同管辖的模块。
+  这是有意的双路供给：主损失负责学出对决策有效的特征表示，自监督重建负责抑制表示塌缩。</p>
+  <p><strong>为什么要拆成独立优化器而不是合成一个加权损失：</strong>
+  Adam 的一阶与二阶矩估计是按参数逐个累积的。两种目标的梯度尺度与更新频率
+  完全不同，混在同一个优化器里会让主更新的自适应步长失真。</p>
+</div>
+
+<h3 id="112-自适应学习率">11.2 自适应学习率</h3>
+
+<p>学习率不是预设的曲线，而是被新旧策略之间的 KL 散度牵着走：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>若 KL 均值 &gt; 目标 KL 的 2 倍：   lr = max(1e-5, lr / 1.5)
 若 KL 均值 &lt; 目标 KL 的 1/2：    lr = min(1e-2, lr * 1.5)
-</code></pre></div></div> <p>目标 KL 取 <strong>0.01</strong>，学习率在 <strong>1e-5 至 1e-2</strong> 区间内伸缩。 该机制<strong>只作用于主优化器</strong>，其余四个的学习率是固定的。</p> <p>这一机制的方法层面讨论见 <a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 2.6 节，此处只给实现口径。</p> <hr> <h2 id="十二损失函数的完整组成">十二、损失函数的完整组成</h2> <p>主更新的总损失由<strong>四项</strong>构成：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>loss = surrogate_loss
+</code></pre></div></div>
+
+<p>目标 KL 取 <strong>0.01</strong>，学习率在 <strong>1e-5 至 1e-2</strong> 区间内伸缩。
+该机制<strong>只作用于主优化器</strong>，其余四个的学习率是固定的。</p>
+
+<p>这一机制的方法层面讨论见
+<a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 2.6 节，此处只给实现口径。</p>
+
+<hr>
+
+<h2 id="十二损失函数的完整组成">十二、损失函数的完整组成</h2>
+
+<p>主更新的总损失由<strong>四项</strong>构成：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>loss = surrogate_loss
      + value_loss_coef * value_loss
      - entropy_coef * entropy.mean()
      + priv_reg_coef * priv_reg_loss
-</code></pre></div></div> <div class="qrl-tbl"> <table> <thead> <tr> <th>项</th> <th>系数</th> <th>说明</th> </tr> </thead> <tbody> <tr> <td>裁剪代理损失</td> <td>1.0，固定</td> <td>策略优化的主项</td> </tr> <tr> <td>价值损失</td> <td>1.0</td> <td>状态价值回归，使用裁剪版</td> </tr> <tr> <td>熵项</td> <td>0.01 线性退火到 0.005</td> <td> <strong>取减号</strong>，鼓励探索</td> </tr> <tr> <td>特权正则损失</td> <td>分段调度，见 12.3</td> <td>为蒸馏到学生做准备</td> </tr> </tbody> </table> </div> <h3 id="121-策略与价值两项">12.1 策略与价值两项</h3> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ratio             = exp(新策略对数概率 - 旧策略对数概率)
+</code></pre></div></div>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>项</th>
+        <th>系数</th>
+        <th>说明</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>裁剪代理损失</td>
+        <td>1.0，固定</td>
+        <td>策略优化的主项</td>
+      </tr>
+      <tr>
+        <td>价值损失</td>
+        <td>1.0</td>
+        <td>状态价值回归，使用裁剪版</td>
+      </tr>
+      <tr>
+        <td>熵项</td>
+        <td>0.01 线性退火到 0.005</td>
+        <td>
+<strong>取减号</strong>，鼓励探索</td>
+      </tr>
+      <tr>
+        <td>特权正则损失</td>
+        <td>分段调度，见 12.3</td>
+        <td>为蒸馏到学生做准备</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h3 id="121-策略与价值两项">12.1 策略与价值两项</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ratio             = exp(新策略对数概率 - 旧策略对数概率)
 surrogate         = -优势 * ratio
 surrogate_clipped = -优势 * clamp(ratio, 1 - clip, 1 + clip)
 surrogate_loss    = max(surrogate, surrogate_clipped).mean()
-</code></pre></div></div> <p>裁剪系数取 <strong>0.2</strong>，与价值裁剪共用同一个值。价值损失同样取裁剪版：</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>value_clipped = 旧价值 + clamp(新价值 - 旧价值, -clip, +clip)
+</code></pre></div></div>
+
+<p>裁剪系数取 <strong>0.2</strong>，与价值裁剪共用同一个值。价值损失同样取裁剪版：</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>value_clipped = 旧价值 + clamp(新价值 - 旧价值, -clip, +clip)
 value_loss    = max((新价值 - 回报)^2, (value_clipped - 回报)^2).mean()
-</code></pre></div></div> <p>两处都取 <code class="language-plaintext highlighter-rouge">max</code>，含义是<strong>取更保守的那一个</strong>：策略侧不允许因比值越界而获得额外收益， 价值侧不允许一次更新把价值估计推得太远。</p> <p>裁剪代理目标为什么这样设计、GAE 如何计算，属于 <a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第二节，此处不重复推导。</p> <h3 id="122-熵项">12.2 熵项</h3> <p>系数由外层在调用父类更新<strong>之前</strong>设定，因此当轮即生效。取值与退火区间见第 13.2 节。</p> <h3 id="123-特权正则损失">12.3 特权正则损失</h3> <p>这一项的作用是<strong>让特权编码器向历史编码器靠拢</strong>，为把教师蒸馏成学生做准备 （学生只有历史，没有特权信息）。</p> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>priv_reg_loss = ||priv_latent - hist_latent.detach()||_2 按批取均值
-</code></pre></div></div> <div class="qrl-key"> <p><strong>注意梯度方向。</strong>历史潜变量被切断回传， 所以这一项<strong>只训练特权编码器</strong>，让它向历史编码器靠拢，反过来则不成立。</p> <p>这也正是第五节里那条约束的由来：两个编码器的输出维度被强制相等（都是 20）， 否则这个 L2 距离根本无法计算。</p> </div> <p>系数按训练轮数分三段调度：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>阶段</th> <th>计数范围</th> <th>系数</th> </tr> </thead> <tbody> <tr> <td>前期</td> <td>小于 2000</td> <td> <strong>0.0</strong>，完全不生效</td> </tr> <tr> <td>过渡</td> <td>2000 至 5000</td> <td>由 0.0 线性升到 0.1</td> </tr> <tr> <td>之后</td> <td>大于 5000</td> <td> <strong>0.1</strong>，封顶</td> </tr> </tbody> </table> </div> <div class="qrl-note"> 另有一个<strong>方向相反</strong>的对齐项：把特权潜变量切断回传， 只训练历史编码器向特权编码器靠拢。它不进主损失， 由第 11.1 节表中的 3 号优化器单独更新，按更新间隔 20 触发。 两项方向相反，共同构成 DAgger 式的双向对齐。 </div> <h2 id="十三探索与正则的两条退火">十三、探索与正则的两条退火</h2> <h3 id="131-动作噪声标准差的双重控制">13.1 动作噪声标准差的双重控制</h3> <p>策略是状态无关标准差的高斯策略，探索强度由一个可学习的标准差向量控制。 这个量被<strong>两重机制</strong>约束：一个初值，一条随训练推进收紧的夹持上限。</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> <th>含义</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">INIT_STD</code></td> <td><strong>0.6</strong></td> <td>标准差初值</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">STD_MAX_START</code></td> <td><strong>0.60</strong></td> <td>夹持上限的起点</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">STD_MAX_END</code></td> <td><strong>0.50</strong></td> <td>夹持上限的终点</td> </tr> </tbody> </table> </div> <div class="qrl-key"> <strong>夹持上限的起点必须等于初值。</strong>若起点低于初值， 第一次参数更新就会把初值夹下来，等于指定的 0.6 从未真正生效过。 这是一处很容易写错、且写错之后不会报错的地方。 </div> <p>设置上限的动机是切断一条正反馈：训练后期标准差顶上限焊死之后， 价值损失会暴涨，进而使代理损失趋近于零，策略从此不再改进。 该动机的完整讨论见 <a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 10.1 节，此处只给机制与数值。</p> <p>配套的三个监控量分别是：标准差原始均值、原始最大值，以及<strong>被夹住的维度占比</strong>。 最后一个接近 1.0 时说明策略想要更大的探索强度但被限制住了，是一个需要人工判断的信号。</p> <h3 id="132-熵系数线性退火">13.2 熵系数线性退火</h3> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>entropy_coef = START + (END - START) * min(1, 更新计数 / 退火区间长度)
-</code></pre></div></div> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> </tr> </thead> <tbody> <tr> <td>起始系数</td> <td><strong>0.01</strong></td> </tr> <tr> <td>终止系数</td> <td><strong>0.005</strong></td> </tr> <tr> <td>退火区间</td> <td>3000 次更新</td> </tr> </tbody> </table> </div> <p>两个实现上的细节：</p> <div class="qrl-note"> <p><strong>一、系数必须在调用父类更新之前设定</strong>，否则本轮用的是上一轮的值， 形成一个差一轮的偏移。</p> <p><strong>二、更新计数跨代不恢复。</strong>这条线的加载器没有保存该计数， 因此续训时熵退火会从头开始。这一点有实测佐证：某次续训在第 1280 次迭代时， 实测系数为 0.0079，而按「从头开始」计算的理论值为 0.01 减去 0.005 乘以 1280 除以 3000，即 0.00787，两者精确吻合。</p> </div> <hr> <h2 id="十四一次控制步与一次参数更新">十四、一次控制步与一次参数更新</h2> <h3 id="141-控制步内的数据流时序">14.1 控制步内的数据流时序</h3> <div class="qrl-svg"> <svg viewbox="0 0 880 320" role="img" aria-label="一次控制步的数据流时序：环境步进内依次是物理推进、渲染、射线求交生成两张感知图并拼成观测、奖励计算、终止判定与重置，随后策略前向产生动作与状态价值，攒够步数后进入一次参数更新"> <defs> <style>
+</code></pre></div></div>
+
+<p>两处都取 <code class="language-plaintext highlighter-rouge">max</code>，含义是<strong>取更保守的那一个</strong>：策略侧不允许因比值越界而获得额外收益，
+价值侧不允许一次更新把价值估计推得太远。</p>
+
+<p>裁剪代理目标为什么这样设计、GAE 如何计算，属于
+<a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第二节，此处不重复推导。</p>
+
+<h3 id="122-熵项">12.2 熵项</h3>
+
+<p>系数由外层在调用父类更新<strong>之前</strong>设定，因此当轮即生效。取值与退火区间见第 13.2 节。</p>
+
+<h3 id="123-特权正则损失">12.3 特权正则损失</h3>
+
+<p>这一项的作用是<strong>让特权编码器向历史编码器靠拢</strong>，为把教师蒸馏成学生做准备
+（学生只有历史，没有特权信息）。</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>priv_reg_loss = ||priv_latent - hist_latent.detach()||_2 按批取均值
+</code></pre></div></div>
+
+<div class="qrl-key">
+  <p><strong>注意梯度方向。</strong>历史潜变量被切断回传，
+  所以这一项<strong>只训练特权编码器</strong>，让它向历史编码器靠拢，反过来则不成立。</p>
+  <p>这也正是第五节里那条约束的由来：两个编码器的输出维度被强制相等（都是 20），
+  否则这个 L2 距离根本无法计算。</p>
+</div>
+
+<p>系数按训练轮数分三段调度：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>阶段</th>
+        <th>计数范围</th>
+        <th>系数</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>前期</td>
+        <td>小于 2000</td>
+        <td>
+<strong>0.0</strong>，完全不生效</td>
+      </tr>
+      <tr>
+        <td>过渡</td>
+        <td>2000 至 5000</td>
+        <td>由 0.0 线性升到 0.1</td>
+      </tr>
+      <tr>
+        <td>之后</td>
+        <td>大于 5000</td>
+        <td>
+<strong>0.1</strong>，封顶</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-note">
+  另有一个<strong>方向相反</strong>的对齐项：把特权潜变量切断回传，
+  只训练历史编码器向特权编码器靠拢。它不进主损失，
+  由第 11.1 节表中的 3 号优化器单独更新，按更新间隔 20 触发。
+  两项方向相反，共同构成 DAgger 式的双向对齐。
+</div>
+
+<h2 id="十三探索与正则的两条退火">十三、探索与正则的两条退火</h2>
+
+<h3 id="131-动作噪声标准差的双重控制">13.1 动作噪声标准差的双重控制</h3>
+
+<p>策略是状态无关标准差的高斯策略，探索强度由一个可学习的标准差向量控制。
+这个量被<strong>两重机制</strong>约束：一个初值，一条随训练推进收紧的夹持上限。</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+        <th>含义</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">INIT_STD</code></td>
+        <td><strong>0.6</strong></td>
+        <td>标准差初值</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">STD_MAX_START</code></td>
+        <td><strong>0.60</strong></td>
+        <td>夹持上限的起点</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">STD_MAX_END</code></td>
+        <td><strong>0.50</strong></td>
+        <td>夹持上限的终点</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  <strong>夹持上限的起点必须等于初值。</strong>若起点低于初值，
+  第一次参数更新就会把初值夹下来，等于指定的 0.6 从未真正生效过。
+  这是一处很容易写错、且写错之后不会报错的地方。
+</div>
+
+<p>设置上限的动机是切断一条正反馈：训练后期标准差顶上限焊死之后，
+价值损失会暴涨，进而使代理损失趋近于零，策略从此不再改进。
+该动机的完整讨论见
+<a href="/projects/quadruped-lidar-rl/rl-method/">强化学习方法</a>第 10.1 节，此处只给机制与数值。</p>
+
+<p>配套的三个监控量分别是：标准差原始均值、原始最大值，以及<strong>被夹住的维度占比</strong>。
+最后一个接近 1.0 时说明策略想要更大的探索强度但被限制住了，是一个需要人工判断的信号。</p>
+
+<h3 id="132-熵系数线性退火">13.2 熵系数线性退火</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>entropy_coef = START + (END - START) * min(1, 更新计数 / 退火区间长度)
+</code></pre></div></div>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>起始系数</td>
+        <td><strong>0.01</strong></td>
+      </tr>
+      <tr>
+        <td>终止系数</td>
+        <td><strong>0.005</strong></td>
+      </tr>
+      <tr>
+        <td>退火区间</td>
+        <td>3000 次更新</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>两个实现上的细节：</p>
+
+<div class="qrl-note">
+  <p><strong>一、系数必须在调用父类更新之前设定</strong>，否则本轮用的是上一轮的值，
+  形成一个差一轮的偏移。</p>
+  <p><strong>二、更新计数跨代不恢复。</strong>这条线的加载器没有保存该计数，
+  因此续训时熵退火会从头开始。这一点有实测佐证：某次续训在第 1280 次迭代时，
+  实测系数为 0.0079，而按「从头开始」计算的理论值为
+  0.01 减去 0.005 乘以 1280 除以 3000，即 0.00787，两者精确吻合。</p>
+</div>
+
+<hr>
+
+<h2 id="十四一次控制步与一次参数更新">十四、一次控制步与一次参数更新</h2>
+
+<h3 id="141-控制步内的数据流时序">14.1 控制步内的数据流时序</h3>
+
+<div class="qrl-svg">
+<svg viewbox="0 0 880 320" role="img" aria-label="一次控制步的数据流时序：环境步进内依次是物理推进、渲染、射线求交生成两张感知图并拼成观测、奖励计算、终止判定与重置，随后策略前向产生动作与状态价值，攒够步数后进入一次参数更新">
+  <defs>
+    <style>
       .qn6-box{fill:none;stroke:var(--global-divider-color,#c9c9c9);stroke-width:1.4}
       .qn6-hi{fill:none;stroke:var(--global-theme-color,#b509ac);stroke-width:1.8}
       .qn6-t{font-size:12px;fill:currentColor}
       .qn6-s{font-size:10.5px;fill:currentColor;opacity:.7}
       .qn6-a{stroke:var(--global-divider-color,#b5b5b5);stroke-width:1.2;fill:none;marker-end:url(#qnarrow6)}
-    </style> <marker id="qnarrow6" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"> <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path> </marker> </defs> <rect class="qn6-box" x="14" y="14" width="852" height="118" rx="7"></rect> <text class="qn6-s" x="28" y="32">环境步进 env.step()</text> <rect class="qn6-box" x="30" y="44" width="146" height="46" rx="5"></rect> <text class="qn6-t" x="103" y="64" text-anchor="middle">① 物理推进</text> <text class="qn6-s" x="103" y="81" text-anchor="middle">0.005 s x 4 = 0.02 s</text> <rect class="qn6-box" x="196" y="44" width="146" height="46" rx="5"></rect> <text class="qn6-t" x="269" y="64" text-anchor="middle">② 渲染取景</text> <text class="qn6-s" x="269" y="81" text-anchor="middle">标记物滞后观测一帧</text> <rect class="qn6-hi" x="362" y="44" width="176" height="46" rx="5"></rect> <text class="qn6-t" x="450" y="64" text-anchor="middle">③ 射线求交</text> <text class="qn6-s" x="450" y="81" text-anchor="middle">高程图 132 与环状图 720，拼成 1473</text> <rect class="qn6-box" x="558" y="44" width="146" height="46" rx="5"></rect> <text class="qn6-t" x="631" y="64" text-anchor="middle">④ 奖励计算</text> <text class="qn6-s" x="631" y="81" text-anchor="middle">含沟沿同步起跳四项</text> <rect class="qn6-box" x="724" y="44" width="126" height="46" rx="5"></rect> <text class="qn6-t" x="787" y="64" text-anchor="middle">⑤ 终止判定</text> <text class="qn6-s" x="787" y="81" text-anchor="middle">触发重置</text> <path class="qn6-a" d="M176,67 H194"></path> <path class="qn6-a" d="M342,67 H360"></path> <path class="qn6-a" d="M538,67 H556"></path> <path class="qn6-a" d="M704,67 H722"></path> <text class="qn6-s" x="440" y="118" text-anchor="middle">重置时途径点索引在此被清零，判读逐地形指标要注意这一点</text> <path class="qn6-a" d="M440,132 V152"></path> <rect class="qn6-box" x="200" y="154" width="480" height="62" rx="7"></rect> <text class="qn6-t" x="440" y="176" text-anchor="middle">策略前向 policy.act(obs)</text> <text class="qn6-s" x="440" y="196" text-anchor="middle">行动者输出 12 维关节目标角度，训练时走特权通路</text> <text class="qn6-s" x="440" y="211" text-anchor="middle">评论家输出 1 维状态价值</text> <path class="qn6-a" d="M440,216 V240"></path> <text class="qn6-t" x="440" y="256" text-anchor="middle">攒够每环境 48 步</text> <path class="qn6-a" d="M440,262 V282"></path> <rect class="qn6-hi" x="260" y="284" width="360" height="34" rx="7"></rect> <text class="qn6-t" x="440" y="306" text-anchor="middle">进入一次参数更新 update()</text> </svg> <div class="qrl-cap">图 6　一次控制步的数据流时序。物理引擎以 0.005 秒推进四个子步，控制频率因此是 50 赫兹；渲染发生在物理推进之后、观测生成之前，所以录像里叠加的可视化标记物比策略实际看到的观测滞后一帧，这一点在逐帧核对录像时必须计入。</div> </div> <p>物理引擎以 0.005 秒为步长推进 4 个子步，合计 0.02 秒，因此控制频率是 50 赫兹。</p> <div class="qrl-note"> 时序上有一处需要在判读录像时计入：<strong>渲染发生在物理推进之后、观测生成之前</strong>。 这意味着录像里叠加的可视化标记物比策略实际看到的观测<strong>滞后一帧</strong>。 另外，终止判定触发重置时途径点索引在此被清零，逐地形指标的统计要考虑这一点。 </div> <h3 id="142-一次-update-的执行顺序">14.2 一次 update() 的执行顺序</h3> <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>① 设置熵系数（线性退火）              ← 必须在进入父类更新之前
+    </style>
+    <marker id="qnarrow6" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--global-divider-color,#b5b5b5)"></path>
+    </marker>
+  </defs>
+
+  <rect class="qn6-box" x="14" y="14" width="852" height="118" rx="7"></rect>
+  <text class="qn6-s" x="28" y="32">环境步进 env.step()</text>
+
+  <rect class="qn6-box" x="30" y="44" width="146" height="46" rx="5"></rect>
+  <text class="qn6-t" x="103" y="64" text-anchor="middle">① 物理推进</text>
+  <text class="qn6-s" x="103" y="81" text-anchor="middle">0.005 s x 4 = 0.02 s</text>
+
+  <rect class="qn6-box" x="196" y="44" width="146" height="46" rx="5"></rect>
+  <text class="qn6-t" x="269" y="64" text-anchor="middle">② 渲染取景</text>
+  <text class="qn6-s" x="269" y="81" text-anchor="middle">标记物滞后观测一帧</text>
+
+  <rect class="qn6-hi" x="362" y="44" width="176" height="46" rx="5"></rect>
+  <text class="qn6-t" x="450" y="64" text-anchor="middle">③ 射线求交</text>
+  <text class="qn6-s" x="450" y="81" text-anchor="middle">高程图 132 与环状图 720，拼成 1473</text>
+
+  <rect class="qn6-box" x="558" y="44" width="146" height="46" rx="5"></rect>
+  <text class="qn6-t" x="631" y="64" text-anchor="middle">④ 奖励计算</text>
+  <text class="qn6-s" x="631" y="81" text-anchor="middle">含沟沿同步起跳四项</text>
+
+  <rect class="qn6-box" x="724" y="44" width="126" height="46" rx="5"></rect>
+  <text class="qn6-t" x="787" y="64" text-anchor="middle">⑤ 终止判定</text>
+  <text class="qn6-s" x="787" y="81" text-anchor="middle">触发重置</text>
+
+  <path class="qn6-a" d="M176,67 H194"></path>
+  <path class="qn6-a" d="M342,67 H360"></path>
+  <path class="qn6-a" d="M538,67 H556"></path>
+  <path class="qn6-a" d="M704,67 H722"></path>
+  <text class="qn6-s" x="440" y="118" text-anchor="middle">重置时途径点索引在此被清零，判读逐地形指标要注意这一点</text>
+
+  <path class="qn6-a" d="M440,132 V152"></path>
+
+  <rect class="qn6-box" x="200" y="154" width="480" height="62" rx="7"></rect>
+  <text class="qn6-t" x="440" y="176" text-anchor="middle">策略前向 policy.act(obs)</text>
+  <text class="qn6-s" x="440" y="196" text-anchor="middle">行动者输出 12 维关节目标角度，训练时走特权通路</text>
+  <text class="qn6-s" x="440" y="211" text-anchor="middle">评论家输出 1 维状态价值</text>
+
+  <path class="qn6-a" d="M440,216 V240"></path>
+  <text class="qn6-t" x="440" y="256" text-anchor="middle">攒够每环境 48 步</text>
+  <path class="qn6-a" d="M440,262 V282"></path>
+
+  <rect class="qn6-hi" x="260" y="284" width="360" height="34" rx="7"></rect>
+  <text class="qn6-t" x="440" y="306" text-anchor="middle">进入一次参数更新 update()</text>
+</svg>
+<div class="qrl-cap">图 6　一次控制步的数据流时序。物理引擎以 0.005 秒推进四个子步，控制频率因此是 50 赫兹；渲染发生在物理推进之后、观测生成之前，所以录像里叠加的可视化标记物比策略实际看到的观测滞后一帧，这一点在逐帧核对录像时必须计入。</div>
+</div>
+
+<p>物理引擎以 0.005 秒为步长推进 4 个子步，合计 0.02 秒，因此控制频率是 50 赫兹。</p>
+
+<div class="qrl-note">
+  时序上有一处需要在判读录像时计入：<strong>渲染发生在物理推进之后、观测生成之前</strong>。
+  这意味着录像里叠加的可视化标记物比策略实际看到的观测<strong>滞后一帧</strong>。
+  另外，终止判定触发重置时途径点索引在此被清零，逐地形指标的统计要考虑这一点。
+</div>
+
+<h3 id="142-一次-update-的执行顺序">14.2 一次 update() 的执行顺序</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>① 设置熵系数（线性退火）              ← 必须在进入父类更新之前
 ② 动作噪声标准差上限退火（0.60 至 0.50）
 ③ 进入主更新循环
      for epoch in range(5):            # 每批数据重复学 5 遍
@@ -105,13 +2965,623 @@ value_loss    = max((新价值 - 回报)^2, (value_clipped - 回报)^2).mean()
 ⑤ 高程图 Actor 侧自监督重建（独立优化器）
 ⑥ 高程图 Critic 侧自监督重建（独立优化器）
 ⑦ 环状图潜变量塌缩告警（只读取标准差，不改变梯度）
-</code></pre></div></div> <p>从零重训基线在第 ⑥ 步之后追加了环状图两侧的自监督重建。</p> <div class="qrl-key"> <p>顺序上有两个位置不能调换：</p> <p><strong>熵系数必须在进入父类更新之前设定</strong>，否则差一轮才生效。</p> <p><strong>自监督必须在主更新之后执行</strong>，否则主更新会覆盖自监督刚刚调整过的编码器参数， 等于自监督白做。</p> </div> <hr> <h2 id="十五训练超参数总表">十五、训练超参数总表</h2> <div class="qrl-note"> 以下数值取自训练存档中实际生效的配置，不是默认值，也不是估算值。 凡是根配置与本版取值不同的，表中一并标出根值，避免读者按根配置复现时对不上。 </div> <h3 id="151-ppo-算法">15.1 PPO 算法</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> <th>备注</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">value_loss_coef</code></td> <td>1.0</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">use_clipped_value_loss</code></td> <td>True</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">clip_param</code></td> <td>0.2</td> <td>代理项与价值项共用</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">entropy_coef</code></td> <td>0.01 退火到 0.005</td> <td>见第 13.2 节</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">desired_kl</code></td> <td>0.01</td> <td>自适应学习率的目标</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">num_learning_epochs</code></td> <td>5</td> <td>每批数据重复学 5 遍</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">num_mini_batches</code></td> <td>4</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">learning_rate</code></td> <td>2.0e-4</td> <td>初值，自适应机制会改动</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">schedule</code></td> <td>adaptive</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">gamma</code></td> <td><strong>0.99</strong></td> <td>见下方口径说明</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">lam</code></td> <td>0.95</td> <td>GAE</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">max_grad_norm</code></td> <td>1.0</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">dagger_update_freq</code></td> <td>20</td> <td>历史编码器单独更新的周期</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">priv_reg_coef_schedual</code></td> <td>0.0，0.1，2000，3000</td> <td>见第 12.3 节</td> </tr> </tbody> </table> </div> <div class="qrl-note"> <strong>折扣因子有两个口径。</strong>项目内部分文档记为 0.995， 而代码实际生效值是 <strong>0.99</strong>。此处以代码实值为准， 两个数字都保留在这里，是为了让读者在别处看到 0.995 时能够解释来源， 而不是误以为哪一处写错了。 </div> <h3 id="152-网络结构">15.2 网络结构</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> <th>备注</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">init_noise_std</code></td> <td>0.6</td> <td>本版覆盖，根值为 1.0</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">actor_hidden_dims</code></td> <td>512，256，128</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">critic_hidden_dims</code></td> <td>512，256，128</td> <td>本版实际使用瘦身 Critic，为 256、128</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">scan_encoder_dims</code></td> <td>128，64，32</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">priv_encoder_dims</code></td> <td>64，20</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">activation</code></td> <td>ELU</td> <td>全网统一</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">tanh_encoder_output</code></td> <td>False</td> <td>指主干输出，不影响各编码器末层激活</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">empirical_normalization</code></td> <td><strong>False</strong></td> <td>无观测归一化层</td> </tr> </tbody> </table> </div> <h3 id="153-观测维度">15.3 观测维度</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>段</th> <th style="text-align: right">维度</th> <th>组成</th> </tr> </thead> <tbody> <tr> <td>本体感受</td> <td style="text-align: right">53</td> <td>3 角速度、2 航向、3 指令、4、36 关节、5</td> </tr> <tr> <td>高程图</td> <td style="text-align: right">132</td> <td>12 乘 11</td> </tr> <tr> <td>显式特权</td> <td style="text-align: right">9</td> <td>3 加 3 加 3</td> </tr> <tr> <td>隐式特权</td> <td style="text-align: right">29</td> <td>4 加 1 加 12 加 12</td> </tr> <tr> <td>历史</td> <td style="text-align: right">530</td> <td>10 帧乘 53 维</td> </tr> <tr> <td><strong>小计</strong></td> <td style="text-align: right"><strong>753</strong></td> <td> </td> </tr> <tr> <td>环状距离图</td> <td style="text-align: right">720</td> <td>10 层乘 72 角</td> </tr> <tr> <td><strong>总计</strong></td> <td style="text-align: right"><strong>1473</strong></td> <td> </td> </tr> </tbody> </table> </div> <h3 id="154-训练规模">15.4 训练规模</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>参数</th> <th>取值</th> <th>备注</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">num_envs</code></td> <td>2048</td> <td>根配置默认 6144</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">num_steps_per_env</code></td> <td>48</td> <td>根值 24，此前某一版起改为 48</td> </tr> <tr> <td>每次更新的样本数</td> <td><strong>98304</strong></td> <td>2048 乘 48</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">max_iterations</code></td> <td>12000</td> <td>从零重训基线为 30000</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">save_interval</code></td> <td>500</td> <td> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">seed</code></td> <td>1</td> <td> </td> </tr> </tbody> </table> </div> <h3 id="155-状态估计器">15.5 状态估计器</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>项</th> <th>取值</th> </tr> </thead> <tbody> <tr> <td>结构</td> <td>多层感知机 53 - 128 - 64 - 9</td> </tr> <tr> <td>激活</td> <td>ELU</td> </tr> <tr> <td>输入</td> <td>观测的前 53 维，<strong>只吃本体感受</strong> </td> </tr> <tr> <td>输出</td> <td>9 维显式特权量</td> </tr> <tr> <td>损失</td> <td>均方误差</td> </tr> <tr> <td>优化器</td> <td>独立 Adam，学习率 1.0e-4</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">train_with_estimated_states</code></td> <td><strong>False</strong></td> </tr> </tbody> </table> </div> <p>最后一项值得单独说明，因为它决定了这个模块在教师策略里到底起不起作用：</p> <div class="qrl-key"> <p><strong>取 True 时</strong>（原始行为）：前向过程中会把观测里那 9 维显式特权 <strong>整体替换成估计器的输出</strong>，Actor 吃到的是估计值。</p> <p><strong>取 False 时</strong>（本版行为）：Actor <strong>直接吃特权真值</strong>， 估计器的输出根本到不了 Actor。</p> <p>因此估计器<strong>仍然参与训练</strong>——它的损失与优化器都正常工作—— 但它<strong>只服务于后续的学生策略蒸馏</strong>，对教师策略本身没有任何影响。</p> </div> <div class="qrl-note"> 这个开关的切换<strong>必须从零重训</strong>：把 Actor 已经习惯的真值输入换成估计值， 相当于给它一个分布外的输入，续训会直接失效。 从零重训基线是唯一满足这一前提的一次训练。 </div> <hr> <h2 id="十六权重继承与回退">十六、权重继承与回退</h2> <h3 id="161-继承方式">16.1 继承方式</h3> <p>加载方式是<strong>全键直拷加严格模式</strong>：键集合或形状有任何不一致就立即报错，<strong>绝不静默跳过</strong>。</p> <p>这条约束的价值在实践中体现过。第八节提到融合子网插入门控层后键位发生了位移， 如果加载器允许静默跳过不匹配的键，结果会是「门控在位、但融合子网权重没加载上」—— 训练照常进行，曲线看起来正常，只是那一路实际上是随机初始化的。 严格模式把这类问题从「训练几千轮后才发现」提前到「启动时立刻报错」。</p> <p>实测的一次加载日志显示直拷 51 个键，其中 Actor 36 个、Critic 14 个， 环状图分支的编码器 6 个键全部继承。</p> <div class="qrl-note"> 框架原生的那条续训入口<strong>不能使用</strong>：它不处理噪声标准差的重置参数， 传了也会静默失效。必须走本项目自己的继承入口。 </div> <h3 id="162-两个变体的继承源不是同一代">16.2 两个变体的继承源不是同一代</h3> <div class="qrl-tbl"> <table> <thead> <tr> <th>变体</th> <th>继承自</th> <th>理由</th> </tr> </thead> <tbody> <tr> <td>模型 A</td> <td>上一版的成功权重</td> <td>该版下楼梯通过率 1.000、速度受控、难度满级</td> </tr> <tr> <td>模型 B</td> <td><strong>更早一版的最后一份健康权重</strong></td> <td> <strong>刻意跳过</strong>紧邻的上一版</td> </tr> </tbody> </table> </div> <div class="qrl-key"> 这不是笔误，是设计。模型 B 在紧邻的上一版触发了「学会不敢下楼梯」的退化： 前向速度掉到 0.172、通过率 0.429、难度等级从 27 退到 18.75。 从这样一份权重续训<strong>很可能把那个坏习惯一并继承下来，浪费一整轮训练</strong>， 因此回退到最后一份健康权重重新出发。 </div> <h3 id="163-网络部分的回退开关">16.3 网络部分的回退开关</h3> <p>本版的每一项网络改动都保留了独立的回退开关，可以逐项关闭而不必整体回滚：</p> <div class="qrl-tbl"> <table> <thead> <tr> <th>目标</th> <th>开关</th> </tr> </thead> <tbody> <tr> <td>模型 A 回到含捷径的旧融合方式</td> <td> <code class="language-plaintext highlighter-rouge">RING_FIX_ENABLE</code> 置 False</td> </tr> <tr> <td>关闭高程图自监督</td> <td> <code class="language-plaintext highlighter-rouge">ACTOR_RECON_ENABLE</code> 与 <code class="language-plaintext highlighter-rouge">CRITIC_RECON_ENABLE</code> 置 False</td> </tr> <tr> <td>自监督不再训练编码器</td> <td> <code class="language-plaintext highlighter-rouge">ACTOR_RECON_TRAIN_ENCODER</code> 置 False（等同于不做自监督）</td> </tr> <tr> <td>关闭标准差夹持与退火</td> <td> <code class="language-plaintext highlighter-rouge">STD_MAX_OVERRIDE_ENABLE</code> 与 <code class="language-plaintext highlighter-rouge">STD_MAX_ANNEAL_ENABLE</code> 置 False</td> </tr> <tr> <td>关闭熵系数退火</td> <td> <code class="language-plaintext highlighter-rouge">ENTROPY_ANNEAL_ENABLE</code> 置 False</td> </tr> <tr> <td>Actor 改吃估计值</td> <td> <code class="language-plaintext highlighter-rouge">TEACHER_USE_TRUE_PRIV</code> 置 False，须与回放侧的对应开关同向</td> </tr> <tr> <td>Critic 回到 753 维裸网络</td> <td> <code class="language-plaintext highlighter-rouge">CRITIC_SLIM_ENABLE</code> 置 False</td> </tr> <tr> <td>在两个变体之间切换</td> <td>启动时指定变体参数</td> </tr> </tbody> </table> </div> <div class="qrl-note"> 留出逐项回退开关的意义不只是出错之后能够回退。 更常用的场景是<strong>做消融</strong>：要判断某项机制到底有没有起作用， 最直接的办法是把它单独关掉再训一遍，而不是从代码里推断。 本页描述的每一处设计，都可以用这张表里的某一行去验证。 </div> <hr> <div class="qrl-nav"> <a href="/projects/quadruped-lidar-rl/rl-method/">← 上一页：强化学习方法</a> <span class="sep">·</span> <a href="/projects/quadruped-lidar-rl/engineering-log/">下一页：工程问题记录 →</a> </div> </article> </div> </div> </div> </div> <footer class="fixed-bottom" role="contentinfo"> <div class="container mt-0"> © Copyright 2026 DDS . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>. </div> </footer> <script>
+</code></pre></div></div>
+
+<p>从零重训基线在第 ⑥ 步之后追加了环状图两侧的自监督重建。</p>
+
+<div class="qrl-key">
+  <p>顺序上有两个位置不能调换：</p>
+  <p><strong>熵系数必须在进入父类更新之前设定</strong>，否则差一轮才生效。</p>
+  <p><strong>自监督必须在主更新之后执行</strong>，否则主更新会覆盖自监督刚刚调整过的编码器参数，
+  等于自监督白做。</p>
+</div>
+
+<hr>
+
+<h2 id="十五训练超参数总表">十五、训练超参数总表</h2>
+
+<div class="qrl-note">
+  以下数值取自训练存档中实际生效的配置，不是默认值，也不是估算值。
+  凡是根配置与本版取值不同的，表中一并标出根值，避免读者按根配置复现时对不上。
+</div>
+
+<h3 id="151-ppo-算法">15.1 PPO 算法</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">value_loss_coef</code></td>
+        <td>1.0</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">use_clipped_value_loss</code></td>
+        <td>True</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">clip_param</code></td>
+        <td>0.2</td>
+        <td>代理项与价值项共用</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">entropy_coef</code></td>
+        <td>0.01 退火到 0.005</td>
+        <td>见第 13.2 节</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">desired_kl</code></td>
+        <td>0.01</td>
+        <td>自适应学习率的目标</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">num_learning_epochs</code></td>
+        <td>5</td>
+        <td>每批数据重复学 5 遍</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">num_mini_batches</code></td>
+        <td>4</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">learning_rate</code></td>
+        <td>2.0e-4</td>
+        <td>初值，自适应机制会改动</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">schedule</code></td>
+        <td>adaptive</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">gamma</code></td>
+        <td><strong>0.99</strong></td>
+        <td>见下方口径说明</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">lam</code></td>
+        <td>0.95</td>
+        <td>GAE</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">max_grad_norm</code></td>
+        <td>1.0</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">dagger_update_freq</code></td>
+        <td>20</td>
+        <td>历史编码器单独更新的周期</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">priv_reg_coef_schedual</code></td>
+        <td>0.0，0.1，2000，3000</td>
+        <td>见第 12.3 节</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-note">
+  <strong>折扣因子有两个口径。</strong>项目内部分文档记为 0.995，
+  而代码实际生效值是 <strong>0.99</strong>。此处以代码实值为准，
+  两个数字都保留在这里，是为了让读者在别处看到 0.995 时能够解释来源，
+  而不是误以为哪一处写错了。
+</div>
+
+<h3 id="152-网络结构">15.2 网络结构</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">init_noise_std</code></td>
+        <td>0.6</td>
+        <td>本版覆盖，根值为 1.0</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">actor_hidden_dims</code></td>
+        <td>512，256，128</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">critic_hidden_dims</code></td>
+        <td>512，256，128</td>
+        <td>本版实际使用瘦身 Critic，为 256、128</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">scan_encoder_dims</code></td>
+        <td>128，64，32</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">priv_encoder_dims</code></td>
+        <td>64，20</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">activation</code></td>
+        <td>ELU</td>
+        <td>全网统一</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">tanh_encoder_output</code></td>
+        <td>False</td>
+        <td>指主干输出，不影响各编码器末层激活</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">empirical_normalization</code></td>
+        <td><strong>False</strong></td>
+        <td>无观测归一化层</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h3 id="153-观测维度">15.3 观测维度</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>段</th>
+        <th style="text-align: right">维度</th>
+        <th>组成</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>本体感受</td>
+        <td style="text-align: right">53</td>
+        <td>3 角速度、2 航向、3 指令、4、36 关节、5</td>
+      </tr>
+      <tr>
+        <td>高程图</td>
+        <td style="text-align: right">132</td>
+        <td>12 乘 11</td>
+      </tr>
+      <tr>
+        <td>显式特权</td>
+        <td style="text-align: right">9</td>
+        <td>3 加 3 加 3</td>
+      </tr>
+      <tr>
+        <td>隐式特权</td>
+        <td style="text-align: right">29</td>
+        <td>4 加 1 加 12 加 12</td>
+      </tr>
+      <tr>
+        <td>历史</td>
+        <td style="text-align: right">530</td>
+        <td>10 帧乘 53 维</td>
+      </tr>
+      <tr>
+        <td><strong>小计</strong></td>
+        <td style="text-align: right"><strong>753</strong></td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td>环状距离图</td>
+        <td style="text-align: right">720</td>
+        <td>10 层乘 72 角</td>
+      </tr>
+      <tr>
+        <td><strong>总计</strong></td>
+        <td style="text-align: right"><strong>1473</strong></td>
+        <td> </td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h3 id="154-训练规模">15.4 训练规模</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>参数</th>
+        <th>取值</th>
+        <th>备注</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">num_envs</code></td>
+        <td>2048</td>
+        <td>根配置默认 6144</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">num_steps_per_env</code></td>
+        <td>48</td>
+        <td>根值 24，此前某一版起改为 48</td>
+      </tr>
+      <tr>
+        <td>每次更新的样本数</td>
+        <td><strong>98304</strong></td>
+        <td>2048 乘 48</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">max_iterations</code></td>
+        <td>12000</td>
+        <td>从零重训基线为 30000</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">save_interval</code></td>
+        <td>500</td>
+        <td> </td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">seed</code></td>
+        <td>1</td>
+        <td> </td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h3 id="155-状态估计器">15.5 状态估计器</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>项</th>
+        <th>取值</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>结构</td>
+        <td>多层感知机 53 - 128 - 64 - 9</td>
+      </tr>
+      <tr>
+        <td>激活</td>
+        <td>ELU</td>
+      </tr>
+      <tr>
+        <td>输入</td>
+        <td>观测的前 53 维，<strong>只吃本体感受</strong>
+</td>
+      </tr>
+      <tr>
+        <td>输出</td>
+        <td>9 维显式特权量</td>
+      </tr>
+      <tr>
+        <td>损失</td>
+        <td>均方误差</td>
+      </tr>
+      <tr>
+        <td>优化器</td>
+        <td>独立 Adam，学习率 1.0e-4</td>
+      </tr>
+      <tr>
+        <td><code class="language-plaintext highlighter-rouge">train_with_estimated_states</code></td>
+        <td><strong>False</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>最后一项值得单独说明，因为它决定了这个模块在教师策略里到底起不起作用：</p>
+
+<div class="qrl-key">
+  <p><strong>取 True 时</strong>（原始行为）：前向过程中会把观测里那 9 维显式特权
+  <strong>整体替换成估计器的输出</strong>，Actor 吃到的是估计值。</p>
+  <p><strong>取 False 时</strong>（本版行为）：Actor <strong>直接吃特权真值</strong>，
+  估计器的输出根本到不了 Actor。</p>
+  <p>因此估计器<strong>仍然参与训练</strong>——它的损失与优化器都正常工作——
+  但它<strong>只服务于后续的学生策略蒸馏</strong>，对教师策略本身没有任何影响。</p>
+</div>
+
+<div class="qrl-note">
+  这个开关的切换<strong>必须从零重训</strong>：把 Actor 已经习惯的真值输入换成估计值，
+  相当于给它一个分布外的输入，续训会直接失效。
+  从零重训基线是唯一满足这一前提的一次训练。
+</div>
+
+<hr>
+
+<h2 id="十六权重继承与回退">十六、权重继承与回退</h2>
+
+<h3 id="161-继承方式">16.1 继承方式</h3>
+
+<p>加载方式是<strong>全键直拷加严格模式</strong>：键集合或形状有任何不一致就立即报错，<strong>绝不静默跳过</strong>。</p>
+
+<p>这条约束的价值在实践中体现过。第八节提到融合子网插入门控层后键位发生了位移，
+如果加载器允许静默跳过不匹配的键，结果会是「门控在位、但融合子网权重没加载上」——
+训练照常进行，曲线看起来正常，只是那一路实际上是随机初始化的。
+严格模式把这类问题从「训练几千轮后才发现」提前到「启动时立刻报错」。</p>
+
+<p>实测的一次加载日志显示直拷 51 个键，其中 Actor 36 个、Critic 14 个，
+环状图分支的编码器 6 个键全部继承。</p>
+
+<div class="qrl-note">
+  框架原生的那条续训入口<strong>不能使用</strong>：它不处理噪声标准差的重置参数，
+  传了也会静默失效。必须走本项目自己的继承入口。
+</div>
+
+<h3 id="162-两个变体的继承源不是同一代">16.2 两个变体的继承源不是同一代</h3>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>变体</th>
+        <th>继承自</th>
+        <th>理由</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>模型 A</td>
+        <td>上一版的成功权重</td>
+        <td>该版下楼梯通过率 1.000、速度受控、难度满级</td>
+      </tr>
+      <tr>
+        <td>模型 B</td>
+        <td><strong>更早一版的最后一份健康权重</strong></td>
+        <td>
+<strong>刻意跳过</strong>紧邻的上一版</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-key">
+  这不是笔误，是设计。模型 B 在紧邻的上一版触发了「学会不敢下楼梯」的退化：
+  前向速度掉到 0.172、通过率 0.429、难度等级从 27 退到 18.75。
+  从这样一份权重续训<strong>很可能把那个坏习惯一并继承下来，浪费一整轮训练</strong>，
+  因此回退到最后一份健康权重重新出发。
+</div>
+
+<h3 id="163-网络部分的回退开关">16.3 网络部分的回退开关</h3>
+
+<p>本版的每一项网络改动都保留了独立的回退开关，可以逐项关闭而不必整体回滚：</p>
+
+<div class="qrl-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>目标</th>
+        <th>开关</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>模型 A 回到含捷径的旧融合方式</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">RING_FIX_ENABLE</code> 置 False</td>
+      </tr>
+      <tr>
+        <td>关闭高程图自监督</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">ACTOR_RECON_ENABLE</code> 与 <code class="language-plaintext highlighter-rouge">CRITIC_RECON_ENABLE</code> 置 False</td>
+      </tr>
+      <tr>
+        <td>自监督不再训练编码器</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">ACTOR_RECON_TRAIN_ENCODER</code> 置 False（等同于不做自监督）</td>
+      </tr>
+      <tr>
+        <td>关闭标准差夹持与退火</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">STD_MAX_OVERRIDE_ENABLE</code> 与 <code class="language-plaintext highlighter-rouge">STD_MAX_ANNEAL_ENABLE</code> 置 False</td>
+      </tr>
+      <tr>
+        <td>关闭熵系数退火</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">ENTROPY_ANNEAL_ENABLE</code> 置 False</td>
+      </tr>
+      <tr>
+        <td>Actor 改吃估计值</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">TEACHER_USE_TRUE_PRIV</code> 置 False，须与回放侧的对应开关同向</td>
+      </tr>
+      <tr>
+        <td>Critic 回到 753 维裸网络</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">CRITIC_SLIM_ENABLE</code> 置 False</td>
+      </tr>
+      <tr>
+        <td>在两个变体之间切换</td>
+        <td>启动时指定变体参数</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="qrl-note">
+  留出逐项回退开关的意义不只是出错之后能够回退。
+  更常用的场景是<strong>做消融</strong>：要判断某项机制到底有没有起作用，
+  最直接的办法是把它单独关掉再训一遍，而不是从代码里推断。
+  本页描述的每一处设计，都可以用这张表里的某一行去验证。
+</div>
+
+<hr>
+
+<div class="qrl-nav">
+  <a href="/projects/quadruped-lidar-rl/rl-method/">← 上一页：强化学习方法</a>
+  <span class="sep">·</span>
+  <a href="/projects/quadruped-lidar-rl/engineering-log/">下一页：工程问题记录 →</a>
+</div>
+
+  </article>
+
+  
+
+  
+    
+
+
+  
+</div>
+</div>
+          </div>
+        
+      
+    </div>
+
+    <!-- Footer -->
+    
+
+
+  <footer class="fixed-bottom" role="contentinfo">
+    <div class="container mt-0">
+      
+  © Copyright 2026
+  DDS
+  
+  . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>.
+
+  
+  
+
+    </div>
+  </footer>
+
+
+
+    <!-- JavaScripts -->
+    <script>
   window.alFolio = {
     compatBootstrap: false
   };
-</script> <script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script> <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script> <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script> <script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script> <script src="/assets/al_math/js/mathjax-setup.js"></script> <script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script> <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script> <script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script> <script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script> <script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script> <script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script> <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script> <script async src="https://badge.dimensions.ai/badge.js"></script> <script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script> <script defer src="/assets/al_img_tools/js/zoom.js"></script> <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script> <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script> <script>
+</script>
+
+<!-- Core navigation/runtime scripts -->
+<script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script>
+
+
+
+  <!-- Masonry & imagesLoaded -->
+  <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script>
+  <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script>
+
+
+
+  <!-- Charts and Diagrams -->
+  
+
+
+
+
+
+
+
+  <!-- Math and Tikzjax -->
+  
+<script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script>
+<script src="/assets/al_math/js/mathjax-setup.js"></script>
+
+
+
+
+
+<!-- Tooltips & popovers runtime -->
+<script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script>
+
+
+
+
+
+  <!-- Tocbot -->
+  <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script>
+
+
+<!-- Load Common JS -->
+<script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script>
+<script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script>
+<script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script>
+
+<!-- Jupyter Open External Links New Tab -->
+<script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script>
+
+<!-- Badges -->
+
+  <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
+
+
+  <script async src="https://badge.dimensions.ai/badge.js"></script>
+
+
+
+
+  <!-- Analytics -->
+  
+
+
+
+
+
+  <!-- Image Features -->
+  
+<!-- Medium Zoom JS -->
+<script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script>
+<script defer src="/assets/al_img_tools/js/zoom.js"></script>
+
+
+
+
+
+  <!-- Scrolling Progress Bar -->
+  <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script>
+
+
+
+
+
+  <!-- Back to Top -->
+  
+  
+  
+    <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script>
+  
+  <script>
     addBackToTop();
-  </script> <script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script> <ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys> <script src="/assets/al_search/js/search-setup.js"></script> <script>
+  </script>
+
+
+
+  <!-- Search -->
+  
+    
+<script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script>
+<ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys>
+<script src="/assets/al_search/js/search-setup.js"></script>
+<script>
 // get the ninja-keys element
 const ninja = document.querySelector('ninja-keys');
 
@@ -607,7 +4077,7 @@ ninja.data = [{
         title: 'email',
         section: 'Socials',
         handler: () => {
-          window.open("mailto:%79%6F%75@%65%78%61%6D%70%6C%65.%63%6F%6D", "_blank");
+          window.open("#", "_blank");
         },
       },{
         id: 'social-inspire',
@@ -665,4 +4135,14 @@ ninja.data = [{
       },
     },];
 
-</script> <script src="/assets/al_search/js/shortcut-key.js"></script> </body> </html>
+</script>
+<script src="/assets/al_search/js/shortcut-key.js"></script>
+
+
+  
+
+
+
+
+  </body>
+</html>

@@ -1,10 +1,1166 @@
-<!DOCTYPE html> <html lang="zh-CN"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <title> ACT · Transformer 层内实现 | DDS </title> <meta name="author" content="DDS "> <meta name="description" content="从子页 ④ 的「decoder 有两种注意力」再往下一层——encoder layer 与 decoder layer 内部逐行发生了什么、位置编码如何进入 query 与 key、post-norm 的残差路径、六个掩码形参的实际取值、多头切分与注意力矩阵形状，以及逐层参数量与计算量的解析推导"> <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作"> <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;"> <style>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <!-- Head -->
+  <head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <!-- Metadata, OpenGraph and Schema.org -->
+
+
+
+
+<!-- Standard metadata -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>
+  
+  
+    
+      ACT · Attention 内部机制 | DDS 
+    
+  
+</title>
+<meta name="author" content="DDS ">
+<meta name="description" content="定位ACT两个encoder与decoder中Q/K/V、位置编码、mask、post-norm和dropout的固定源码行为。">
+
+  <meta name="keywords" content="seq-firstqkv-sourceattention-maskpost-normdropoutcode-mapping">
+
+
+
+
+
+
+
+
+
+
+<!-- Security: Content Security Policy -->
+<!-- Permissive CSP suitable for academic websites. Allows external images, videos, and common embed services. -->
+<!-- To customize for your needs, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;">
+<style>
   :root {
     --max-content-width: 930px;
   }
-</style> <link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous"> <link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap"> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light"> <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;"> <link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711"> <link rel="canonical" href="https://dds131.github.io/knowledge/imitation-learning/act/attention/"> <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark"> <script>
+</style>
+
+<!-- Tailwind-first core styles -->
+<link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62">
+
+
+
+
+
+
+  <!-- Tocbot -->
+  <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous">
+
+
+<!-- Icons -->
+
+  
+<!-- Font Awesome -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous">
+
+<!-- Academicons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous">
+
+<!-- Scholar Icons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous">
+
+
+
+<link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap">
+
+<!-- Code Syntax Highlighting -->
+<link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light">
+
+<!-- Styles -->
+
+
+
+
+  <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+
+<link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711">
+
+<link rel="canonical" href="https://dds131.github.io/knowledge/imitation-learning/act/attention/">
+
+
+  <!-- Dark Mode -->
+  <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script>
+  <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark">
+  <script>
     initTheme();
-  </script> </head> <body class="fixed-top-nav "> <header> <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation"> <div class="container"> <a class="navbar-brand title font-weight-lighter" href="/"> <span class="font-weight-bold">DDS</span> </a> <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar top-bar"></span> <span class="icon-bar middle-bar"></span> <span class="icon-bar bottom-bar"></span> </button> <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav"> <ul class="navbar-nav navbar-menu-list flex-nowrap"> <li class="nav-item "> <a class="nav-link" href="/">关于 </a> </li> <li class="nav-item "> <a class="nav-link" href="/blog/">blog </a> </li> <li class="nav-item "> <a class="nav-link" href="/publications/">publications </a> </li> <li class="nav-item "> <a class="nav-link" href="/projects/">projects </a> </li> <li class="nav-item "> <a class="nav-link" href="/repositories/">repositories </a> </li> <li class="nav-item "> <a class="nav-link" href="/cv/">CV </a> </li> <li class="nav-item "> <a class="nav-link" href="/teaching/">teaching </a> </li> <li class="nav-item "> <a class="nav-link" href="/people/">people </a> </li> <li class="nav-item dropdown "> <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus </a> <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown"> <a class="dropdown-item " href="/books/">bookshelf</a> <div class="dropdown-divider"></div> <a class="dropdown-item " href="/blog/">blog</a> </div> </li> <li class="nav-item active"> <a class="nav-link" href="/knowledge/">knowledge <span class="sr-only">(current)</span> </a> </li> <li class="nav-item"> <button id="search-toggle" type="button" title="Search" aria-label="Open search"> <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span> </button> </li> <li class="toggle-container"> <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme"> <i class="fa-half-sun-moon" id="light-toggle-system"></i> <i class="fa-solid fa-moon" id="light-toggle-dark"></i> <i class="fa-solid fa-sun" id="light-toggle-light"></i> </button> </li> </ul> </div> </div> </nav> <progress id="progress" value="0"> <div class="progress-container"> <span class="progress-bar"></span> </div> </progress> </header> <div class="container mt-5" role="main"> <div class="row"> <div class="col-sm-3"> <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="2"></nav> </div> <div class="col-sm-9"> <div class="post"> <header class="post-header"> <h1 class="post-title">ACT · Transformer 层内实现</h1> <p class="post-description">从子页 ④ 的「decoder 有两种注意力」再往下一层——encoder layer 与 decoder layer 内部逐行发生了什么、位置编码如何进入 query 与 key、post-norm 的残差路径、六个掩码形参的实际取值、多头切分与注意力矩阵形状，以及逐层参数量与计算量的解析推导</p> </header> <article> <style>
+  </script>
+
+
+
+
+
+
+
+  <!-- Image Features -->
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+  </head>
+
+  <!-- Body -->
+  <body class="fixed-top-nav ">
+    <!-- Header -->
+    <header>
+  <!-- Nav Bar -->
+  <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation">
+    <div class="container">
+      
+        <a class="navbar-brand title font-weight-lighter" href="/">
+          
+            
+              <span class="font-weight-bold">DDS</span>
+            
+            
+            
+          
+        </a>
+      
+      <!-- Navbar Toggle -->
+      <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar top-bar"></span>
+        <span class="icon-bar middle-bar"></span>
+        <span class="icon-bar bottom-bar"></span>
+      </button>
+
+      <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav">
+        <ul class="navbar-nav navbar-menu-list flex-nowrap">
+          
+
+          <!-- About -->
+          <li class="nav-item ">
+            <a class="nav-link" href="/">关于
+              
+            </a>
+          </li>
+
+          <!-- Other pages -->
+          
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/blog/">blog
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/publications/">publications
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/projects/">projects
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/repositories/">repositories
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/cv/">CV
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/teaching/">teaching
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/people/">people
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                
+                <li class="nav-item dropdown ">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus
+                    
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown">
+                    
+                      
+                        <a class="dropdown-item " href="/books/">bookshelf</a>
+                      
+                    
+                      
+                        <div class="dropdown-divider"></div>
+                      
+                    
+                      
+                        <a class="dropdown-item " href="/blog/">blog</a>
+                      
+                    
+                  </div>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item active">
+                  <a class="nav-link" href="/knowledge/">knowledge
+                    
+                      <span class="sr-only">(current)</span>
+                    
+                  </a>
+                </li>
+              
+            
+          
+          
+            <!-- Search -->
+            <li class="nav-item">
+              <button id="search-toggle" type="button" title="Search" aria-label="Open search">
+                <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span>
+              </button>
+            </li>
+          
+          
+            <!-- Toogle theme mode -->
+            <li class="toggle-container">
+              <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme">
+                <i class="fa-half-sun-moon" id="light-toggle-system"></i>
+                <i class="fa-solid fa-moon" id="light-toggle-dark"></i>
+                <i class="fa-solid fa-sun" id="light-toggle-light"></i>
+              </button>
+            </li>
+          
+        </ul>
+      </div>
+    </div>
+  </nav>
+  
+    <!-- Scrolling Progress Bar -->
+    <progress id="progress" value="0">
+      <div class="progress-container">
+        <span class="progress-bar"></span>
+      </div>
+    </progress>
+  
+</header>
+
+
+    <!-- Content -->
+    <div class="container mt-5" role="main">
+      
+        
+        
+        
+          <div class="row">
+            <!-- sidebar, which will move to the top on a small screen -->
+            <div class="col-sm-3">
+              <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="2"></nav>
+            </div>
+            <!-- main content area -->
+            <div class="col-sm-9">
+
+<div class="post">
+  <header class="post-header">
+    <h1 class="post-title">ACT · Attention 内部机制</h1>
+    <p class="post-description">定位ACT两个encoder与decoder中Q/K/V、位置编码、mask、post-norm和dropout的固定源码行为。</p>
+  </header>
+
+  <article>
+    <style>
   /* ---- 左侧栏容器：整体 sticky，内部两块各自独立滚动 ----------------------
    主题自带的 #toc-sidebar 本来带 .sticky-top，两个 sticky 兄弟元素会互相遮挡，
    所以由 JS 摘掉它的 .sticky-top，改为由本容器统一 sticky。 */
@@ -165,7 +1321,845 @@
       max-height: 40vh;
     }
   }
-</style> <div id="note-side"> <details id="note-tree" open=""> <summary>知识库目录</summary> <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp"> <summary> ⓪ 深度学习基础<span class="n">2</span> </summary> <ul> <li> <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a> </li> <li> <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a> </li> <li> <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a> </li> </ul> </details><details class="note-tree-grp" open=""> <summary> ① 模仿学习与 VLA<span class="n">146</span> </summary> <ul> <li> <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a> </li> <li> <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul> <li> <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a> </li> <li> <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a> </li> <li> <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z（含 AE 与 VAE）">CVAE 与隐变量</a> </li> <li> <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a> </li> <li> <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling">时间集成</a> </li> <li> <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练目标与超参">训练目标与超参</a> </li> <li> <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与局限">实验消融与局限</a> </li> <li> <a href="/knowledge/imitation-learning/act/network/" title="ACT · 网络模型逐模块拆解">网络模型拆解</a> </li> <li> <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Transformer 层内实现" class="cur">Transformer 层内</a> </li> <li> <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 能力边界与证据分层">能力边界与证据分层</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向约定与推理期现象">时间方向与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界泛化与数据配方">开放世界与数据配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI 源码剖析">OpenPI 源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现的差异及推理期现象">论文与实现的差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 分布式价值函数">分布式价值函数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · 演进对比与开源复现现状">演进对比与开源复现现状</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 源码映射与工程复现路线">源码映射与工程复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练流程、Loss 与公开边界">数据训练与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss">Training-Time RTC</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/" title="HG-DAgger：Human-Gated DAgger">HG-DAgger</a><ul> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/foundations/" title="HG-DAgger · 从 BC 到人工门控数据聚合">问题与方法谱系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/intervention/" title="HG-DAgger · 人工门控、接管与恢复轨迹">人工门控与恢复轨迹</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/risk/" title="HG-DAgger · Ensemble Doubt 与风险阈值">Doubt 与风险阈值</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/vla-pipeline/" title="HG-DAgger · VLA 数据、Loss 与迭代部署">VLA 数据与训练</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 token 组织">网络架构与 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示、损失与「论文 ≠ 实现」">动作表示与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与迁移到自己的机械臂">推理部署与迁移</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作、深层 DiT 与多本体基础模型">GR00T N1.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 AlternateVLDiT">架构增量与图文分流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作、统计量与训练数据">相对动作与数据</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、时间方向与 Loss">Flow Matching 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 训练流程、优化配置与迭代策略">训练、优化与迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 四步推理、RTC 与异常排查">推理与异常排查</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与涌现现象">推理与涌现现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a> </li> </ul> </li> </ul> </li> </ul> </details><details class="note-tree-grp"> <summary> ② 强化学习<span class="n">88</span> </summary> <ul> <li> <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a> </li> <li class="part">第一部分 · 基础</li> <li> <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a> </li> <li> <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a> </li> <li> <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a> </li> <li> <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a> </li> <li> <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a> </li> <li class="part">第二部分 · 进阶</li> <li> <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul> <li> <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul> <li> <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul> <li> <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a> </li> <li class="part">第三部分 · 前沿</li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul> <li> <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a> </li> <li> <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a> </li> <li> <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a> </li> <li> <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a> </li> <li> <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a> </li> </ul> </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details> </div> <script>
+</style>
+
+<div id="note-side">
+  <details id="note-tree" open="">
+    <summary>知识库目录</summary>
+    <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp">
+          <summary>
+            ⓪ 深度学习基础<span class="n">2</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a>
+            </li>
+<li>
+                <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a>
+</li>
+<li>
+                <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a>
+</li>
+</ul>
+        </details><details class="note-tree-grp" open="">
+          <summary>
+            ① 模仿学习与 VLA<span class="n">167</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a>
+            </li>
+<li>
+                <a href="/knowledge/imitation-learning/behavior-cloning/" title="Behavior Cloning：监督目标、分布漂移与失效诊断">Behavior Cloning</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/dagger/" title="DAgger：数据聚合、策略诱导分布与在线模仿">DAgger</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/hg-dagger/" title="HG-DAgger：人工门控的数据聚合">HG-DAgger</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/foundations/" title="HG-DAgger Foundations：人工门控、允许集与恢复数据">Foundations</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/intervention/" title="HG-DAgger Intervention：人类干预与控制权状态机">Intervention</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/risk/" title="HG-DAgger Risk：风险信号、阈值与失效处理">Risk</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/vla-pipeline/" title="HG-DAgger VLA Pipeline：从干预数据到受控发布">VLA Pipeline</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z">CVAE 与隐变量</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练流程、损失与验证">训练流程、损失与验证</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling 时间集成">时间集成</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与证据边界">实验、消融与证据边界</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 局限、证据边界与后续选型">局限与后续选型</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码导读与调用链">官方源码与调用链</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network/" title="ACT Network · 模块、张量接口与数据流">Network模块与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network-analysis/" title="ACT Network Analysis · 形状、参数、算量与梯度">Network Analysis</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Attention 内部机制" class="cur">Attention内部机制</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/reproduction/" title="ACT · 复现指南与工程验收">复现指南与工程验收</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/generative-action-models/" title="生成式动作模型：Regression、CVAE、Diffusion 与 Flow Matching">生成式动作模型</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/foundations/" title="VLA 公共基础：从观测到安全执行">公共基础</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/robotics-control/" title="VLA 公共基础 · 机器人学、坐标系与控制接口">机器人学与控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/vlm-grounding/" title="VLA 公共基础 · VLM 骨干、具身与空间 Grounding">VLM 与 Grounding</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/action-representations/" title="VLA 公共基础 · 动作空间、Token、Diffusion 与 Flow">动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/data-cross-embodiment/" title="VLA 公共基础 · 数据工程、Co-training 与跨本体">数据与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/model-lineage/" title="VLA 公共基础 · 奠基模型与创新谱系">模型谱系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/training-adaptation/" title="VLA 公共基础 · 预训练、Co-training、微调与持续适配">训练与适配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/long-horizon/" title="VLA 公共基础 · 长时序规划、记忆与世界模型">长时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/evaluation-benchmarks/" title="VLA 公共基础 · 统一评测、Benchmark 与失败分类">统一评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/realtime-deployment/" title="VLA 公共基础 · 实时部署、效率与机器人系统接口">实时部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/safety-reliability/" title="VLA 公共基础 · 安全、可靠性与人在回路">安全可靠性</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向、论文版本与推理期现象">时间方向与论文版本</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码地图、调用链与复现审计">官方源码与复现审计</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界数据、评测与消融">开放世界数据与评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现差异">论文与实现差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI源码剖析">OpenPI源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · π0到π0.6演进与开源复现">演进与开源复现边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 回报分布价值函数">回报分布价值函数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 实现接口与静态复现门禁">实现接口与静态复现门禁</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练目标与公开边界">数据、训练目标与公开边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss">Training-Time RTC</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/experiments/" title="OpenVLA · 实验与基准">实验与基准</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 Token 组织">网络架构与 Token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示与损失">动作表示与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与机械臂迁移">推理部署与迁移</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码逐文件剖析">官方源码逐文件剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/inference-deployment/" title="GR00T N1 · 推理部署与动作块消费">推理部署与动作块</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作与 32 层 DiT">GR00T N1.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 32 层 AlternateVLDiT">架构与 32 层 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作与数据契约概览">动作与数据契约</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action/" title="GR00T N1.6 · 相对动作表示">相对动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/data-statistics/" title="GR00T N1.6 · 数据与统计量">数据与统计量</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、Masked MSE 与时间方向">Flow 与 Masked MSE</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 预训练、后训练与参数更新">预训练与后训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 推理闭环与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/perception-tracking/" title="DexGraspVLA · 目标感知与跟踪">目标感知与跟踪</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与行为机制">推理闭环与行为机制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析与实现边界">官方源码与实现边界</a>
+                              </li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </details><details class="note-tree-grp">
+          <summary>
+            ② 强化学习<span class="n">88</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a>
+            </li>
+<li class="part">第一部分 · 基础</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a>
+</li>
+<li class="part">第二部分 · 进阶</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a>
+</li>
+<li class="part">第三部分 · 前沿</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a>
+</li>
+</ul>
+        </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details>
+</div>
+
+<script>
   // 渐进增强：把目录树搬到左侧栏，并把主题自带的本页目录收进同一个 sticky 容器。
   // 没有 JS 时树仍在正文顶部，可见可点，只是不在左侧。
   (function () {
@@ -201,143 +2195,588 @@
       tree.open = false;
     }
   })();
-</script> <style>
-.note-nav{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1.2rem 0 2rem;padding:.7rem 1rem;border-radius:8px;border:1px solid var(--global-divider-color,#e3e3e3);font-size:.88rem}
-.note-nav .sep{opacity:.35}
-.note-nav .cur{opacity:.62}
-.note-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:.8rem;margin:1.5rem 0}
-.note-kpi div{border-left:3px solid var(--global-theme-color,#b509ac);padding:.28rem .75rem}
-.note-kpi b{display:block;font-size:1.28rem;line-height:1.22}
-.note-kpi span{font-size:.78rem;opacity:.72}
-.note-callout{border-left:3px solid var(--global-divider-color,#d0d0d0);padding:.25rem 0 .25rem .9rem;font-size:.9rem;opacity:.9;margin:1.2rem 0}
-.note-tbl{overflow-x:auto;margin:1rem 0}
-.note-mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin:1rem 0 1.4rem}
-.note-mini div{border:1px solid var(--global-divider-color,#e3e3e3);border-radius:8px;padding:.85rem .95rem}
-.note-mini b{display:block;margin-bottom:.25rem}
-.note-def{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.75rem;margin:1rem 0 1.35rem}
-.note-def div{border-left:3px solid var(--global-theme-color,#b509ac);padding:.35rem .8rem;background:color-mix(in srgb,var(--global-bg-color,#fff) 92%,var(--global-theme-color,#b509ac) 8%)}
-.note-def b{display:block;margin-bottom:.2rem}
-.note-fig{margin:1.5rem 0 1.8rem}
-.note-fig svg{width:100%;max-width:880px;display:block;margin:0 auto;height:auto}
-.note-fig figcaption{font-size:.82rem;opacity:.78;margin:.6rem auto 0;max-width:880px;line-height:1.6}
-.note-video-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:1.2rem 0 1.8rem}
-.note-video{border:1px solid var(--global-divider-color,#e3e3e3);border-radius:8px;padding:.7rem;background:var(--global-bg-color,#fff)}
-.note-video video{width:100%;display:block;border-radius:6px;background:#111;aspect-ratio:16/9;object-fit:cover}
-.note-video b{display:block;margin:.55rem 0 .25rem;font-size:.92rem}
-.note-video p{font-size:.8rem;opacity:.78;margin:0;line-height:1.55}
-.note-code{margin:1rem 0;padding:.9rem 1rem;border:1px solid var(--global-divider-color,#e3e3e3);border-radius:8px;background:color-mix(in srgb,var(--global-bg-color,#fff) 94%,var(--global-theme-color,#b509ac) 6%);overflow-x:auto}
-.note-code pre{margin:0;white-space:pre-wrap;font-size:.86rem;line-height:1.65}
-</style> <div class="note-nav"> <a href="/knowledge/">知识库首页</a> <span class="sep">/</span><a href="/knowledge/imitation-learning/">模仿学习</a> <span class="sep">/</span><a href="/knowledge/imitation-learning/act/">ACT 总览</a> <span class="sep">/</span><span class="cur">⑩ 层内实现</span> </div> <p>子页 ④ 把 ACT 的网络结构讲到「decoder 里有两种注意力，一种让 action query 之间互相可见，一种从 memory 取信息」这一层；子页 ⑨ 则拆解 <code class="language-plaintext highlighter-rouge">DETRVAE</code> 的装配结构。严格按 PyTorch 的直接子项统计，<code class="language-plaintext highlighter-rouge">DETRVAE</code> 有 14 个具名子模块和 1 个持久化缓冲区；若继续展开容器内部，表格行数会更多，因此不宜把“表格行数”称为模块总数。本页覆盖两者之间剩下的最后一层——<strong>每一层 Transformer 内部逐行发生了什么。</strong></p> <p>本页的覆盖范围就是官方仓库 <code class="language-plaintext highlighter-rouge">detr/models/transformer.py</code> 这一个文件的 314 行。它定义了五个类：<code class="language-plaintext highlighter-rouge">Transformer</code>、<code class="language-plaintext highlighter-rouge">TransformerEncoder</code>、<code class="language-plaintext highlighter-rouge">TransformerDecoder</code>、<code class="language-plaintext highlighter-rouge">TransformerEncoderLayer</code>、<code class="language-plaintext highlighter-rouge">TransformerDecoderLayer</code>，以及三个工具函数。ACT 里的三个 Transformer 容器全部由这五个类构造。</p> <div class="note-kpi"> <div> <b>314 行</b><span>本页覆盖的源码范围</span> </div> <div> <b>7 与 11</b><span>encoder 层与 decoder 层的子步骤数</span> </div> <div> <b>512 = 8 × 64</b><span>隐维度按头切分</span> </div> <div> <b>0 个</b><span>因果掩码，六个掩码形参只有一个非 None</span> </div> <div> <b>post-norm</b><span>官方默认配置；源码允许启用 pre-norm</span> </div> <div> <b>35.0 G</b><span>真机口径下主干 11 层 Transformer 的 MAC，解析核算</span> </div> </div> <div class="note-callout"> 本页最需要记住的三条：在每次注意力调用处，源码把位置编码显式加到 query 与 key，<b>没有把原始位置编码直接加到 value</b>；第一层 decoder self-attention 在关闭 dropout 时会给所有 query 位置相同的输出，但训练态的注意力 dropout 与残差 dropout 会破坏这种逐样本的精确相等；各层由 <code>deepcopy</code> 得到独立参数，不过当前源码最终取 <code>hs[0]</code>，动作头只消费第 0 个 decoder 层的结果。 </div> <hr> <h2 id="一本页的定位与边界">一、本页的定位与边界</h2> <div class="note-tbl"> <table> <thead> <tr> <th>想找什么</th> <th>应该去哪一页</th> </tr> </thead> <tbody> <tr> <td>注意力的一般定义、缩放因子 \(1/\sqrt{d_k}\) 的来源、多头注意力的动机、自注意力的 \(O(n^2)\) 复杂度</td> <td>深度学习基础主线的注意力机制页</td> </tr> <tr> <td>正弦位置编码的公式与推导、可学习编码与固定编码的一般比较</td> <td>深度学习基础主线的位置编码页</td> </tr> <tr> <td>DETR 的集合预测思想、action query 与 object query 的类比边界、四套位置编码的分工、非自回归解码的论证</td> <td>子页 ④ DETR-style Transformer</td> </tr> <tr> <td>模块清单、装配顺序、梯度可达性、参数组归属、参数量总表</td> <td>子页 ⑨ 网络模型逐模块拆解</td> </tr> <tr> <td> <code class="language-plaintext highlighter-rouge">hs</code> 的 <code class="language-plaintext highlighter-rouge">[0]</code> 索引为什么是「第 0 层」而不是「解包元组」的完整事实链与自查方法</td> <td>子页 ④ 第十节</td> </tr> <tr> <td>超参的数值来源、哪些被覆盖、优化器配置</td> <td>子页 ⑥ 训练目标与超参</td> </tr> </tbody> </table> </div> <p>本页不讨论以下两件事，因为它们依赖具体版本与场景，从源码无法得出确定结论：post-norm 与 pre-norm 哪一种更好；<code class="language-plaintext highlighter-rouge">nn.MultiheadAttention</code> 的 <code class="language-plaintext highlighter-rouge">need_weights</code> 保持默认 True 是否带来可观测的开销。本页只陈述 ACT 的实际取值。</p> <h3 id="11-先区分继承实现任务装配与方法创新">1.1 先区分“继承实现、任务装配与方法创新”</h3> <div class="note-tbl"> <table> <thead> <tr> <th>层级</th> <th>本页涉及的事实</th> <th>准确归属</th> </tr> </thead> <tbody> <tr> <td>通用实现</td> <td>多头注意力、残差、post-norm、前馈网络，以及 Q/K 处的位置编码注入</td> <td>继承自 PyTorch 与 DETR 风格实现，不是 ACT 新提出的注意力算子</td> </tr> <tr> <td>ACT 的任务装配</td> <td>action query、潜变量与本体状态 token、多相机视觉 memory，以及 4 层 encoder / 7 层 decoder、\(d=512\)、\(f=3200\) 的配置</td> <td>ACT 针对双臂操作任务的模型组合与超参数选择</td> </tr> <tr> <td>ACT 的方法贡献</td> <td>action chunking、条件 VAE 与 temporal ensembling 的组合</td> <td>ACT 论文的核心方法创新</td> </tr> <tr> <td>固定版本实现细节</td> <td> <code class="language-plaintext highlighter-rouge">DETRVAE.forward</code> 对 decoder 返回值使用 <code class="language-plaintext highlighter-rouge">hs[0]</code> </td> <td>代码行为；它会使动作头只读取第 0 个 decoder 层的结果，不应解释成多层 decoder 的设计贡献</td> </tr> </tbody> </table> </div> <p>本页同时区分两个公开口径：最终项目论文在真机实验中使用动作块长度 \(H=90\)；公开仓库的仿真示例与 arXiv v1 的表格使用 \(H=100\)。源码只读取配置项 <code class="language-plaintext highlighter-rouge">chunk_size</code>，不会自动判断任务。因此，后文所有带 \(H\) 的公式都保持符号形式；代入数值时会明确标注口径。</p> <hr> <h2 id="二张量布局约定seq-first">二、张量布局约定：seq-first</h2> <p>读 ACT 的 Transformer 源码之前必须先确认一件事：所有序列张量都是 <strong>seq-first</strong> 布局，即 \((\text{序列长度},\ \text{批大小},\ \text{特征维})\)，而不是更常见的 batch-first。</p> <p>原因在构造函数里：</p> <div class="note-code"><pre>self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)</pre></div> <p><code class="language-plaintext highlighter-rouge">nn.MultiheadAttention</code> 的 <code class="language-plaintext highlighter-rouge">batch_first</code> 参数<strong>没有被传入</strong>，取默认值 <code class="language-plaintext highlighter-rouge">False</code>，因此它要求输入形状为 \((L,\, N,\, E)\)。</p> <h3 id="21-六处关键的布局或批维处理">2.1 六处关键的布局或批维处理</h3> <div class="note-tbl"> <table> <thead> <tr> <th>位置</th> <th>代码</th> <th>切换前</th> <th>切换后</th> </tr> </thead> <tbody> <tr> <td>主干视觉特征</td> <td><code class="language-plaintext highlighter-rouge">src.flatten(2).permute(2, 0, 1)</code></td> <td>\((B,\, 512,\, 15,\, 80)\)</td> <td>\((1200,\, B,\, 512)\)</td> </tr> <tr> <td>主干位置编码</td> <td><code class="language-plaintext highlighter-rouge">pos_embed.flatten(2).permute(2,0,1).repeat(1, bs, 1)</code></td> <td>\((1,\, 512,\, 15,\, 80)\)</td> <td>\((1200,\, B,\, 512)\)</td> </tr> <tr> <td>action query</td> <td><code class="language-plaintext highlighter-rouge">query_embed.unsqueeze(1).repeat(1, bs, 1)</code></td> <td>\((H,\, 512)\)</td> <td>\((H,\, B,\, 512)\)</td> </tr> <tr> <td>两个额外 token</td> <td><code class="language-plaintext highlighter-rouge">torch.stack([latent_input, proprio_input], axis=0)</code></td> <td>两个 \((B,\, 512)\)</td> <td>\((2,\, B,\, 512)\)</td> </tr> <tr> <td>额外位置编码</td> <td><code class="language-plaintext highlighter-rouge">additional_pos_embed.unsqueeze(1).repeat(1, bs, 1)</code></td> <td>\((2,\, 512)\)</td> <td>\((2,\, B,\, 512)\)</td> </tr> <tr> <td>CVAE encoder 输入</td> <td><code class="language-plaintext highlighter-rouge">encoder_input.permute(1, 0, 2)</code></td> <td>\((B,\, H+2,\, 512)\)</td> <td>\((H+2,\, B,\, 512)\)</td> </tr> </tbody> </table> </div> <p>读码口诀：见到 <code class="language-plaintext highlighter-rouge">.permute(2, 0, 1)</code> 或 <code class="language-plaintext highlighter-rouge">.permute(1, 0, 2)</code>，就是在切换到 seq-first。上表同时列出 <code class="language-plaintext highlighter-rouge">repeat</code>、<code class="language-plaintext highlighter-rouge">unsqueeze</code> 与 <code class="language-plaintext highlighter-rouge">stack</code>，它们处理批维或序列维，但不都属于“布局切换”。在本页跟踪的 Transformer 序列路径里，CVAE encoder 在 <code class="language-plaintext highlighter-rouge">permute</code> 之前及最终 <code class="language-plaintext highlighter-rouge">hs.transpose(1, 2)</code> 之后使用 batch-first；视觉骨干、动作头等外围网络还会出现其他布局，不能把“两处”推广到整个模型前向。</p> <h3 id="22-repeat-与广播的差别">2.2 repeat 与广播的差别</h3> <p>主干侧的位置编码显式做了 <code class="language-plaintext highlighter-rouge">repeat(1, bs, 1)</code>，而 CVAE 侧的 <code class="language-plaintext highlighter-rouge">pos_embed</code> 保持 \((H+2,\, 1,\, 512)\) 不做 repeat，靠广播与 \((H+2,\, B,\, 512)\) 相加。</p> <p>两者的位置编码都先以批维为 1 的形式产生：<code class="language-plaintext highlighter-rouge">PositionEmbeddingSine</code> 的输出批维为 1（见子页 <a href="/knowledge/imitation-learning/act/network/">⑨ 网络模型逐模块拆解</a> 第 4.6 节），<code class="language-plaintext highlighter-rouge">pos_table</code> 也带一个长度为 1 的批维。主干源码选择用 <code class="language-plaintext highlighter-rouge">repeat</code> 显式复制到批大小 \(B\)；CVAE encoder 则在 <code class="language-plaintext highlighter-rouge">with_pos_embed</code> 的加法中依赖广播。由于 \((S,1,d)\) 可以广播到 \((S,B,d)\)，显式 <code class="language-plaintext highlighter-rouge">repeat</code> 并不是 <code class="language-plaintext highlighter-rouge">nn.MultiheadAttention</code> 的严格要求；这里只能把差异解释为两处源码的实现选择，不能反推其设计动机。</p> <hr> <h2 id="三nnmultiheadattention-的接口与内部">三、<code class="language-plaintext highlighter-rouge">nn.MultiheadAttention</code> 的接口与内部</h2> <p>ACT 不自己实现注意力，三处注意力全部调用 PyTorch 的 <code class="language-plaintext highlighter-rouge">nn.MultiheadAttention</code>。</p> <h3 id="31-构造与参数构成">3.1 构造与参数构成</h3> <p>构造时只传了三个参数：<code class="language-plaintext highlighter-rouge">d_model</code>、<code class="language-plaintext highlighter-rouge">nhead</code>、<code class="language-plaintext highlighter-rouge">dropout</code>。其余全部取默认值，其中 <code class="language-plaintext highlighter-rouge">bias=True</code>、<code class="language-plaintext highlighter-rouge">add_bias_kv=False</code>、<code class="language-plaintext highlighter-rouge">batch_first=False</code>。</p> <div class="note-tbl"> <table> <thead> <tr> <th>参数名</th> <th>形状</th> <th>数量</th> <th>说明</th> </tr> </thead> <tbody> <tr> <td><code class="language-plaintext highlighter-rouge">in_proj_weight</code></td> <td>\((3d,\, d)\)</td> <td>\(3 \times 512 \times 512 = 786{,}432\)</td> <td>Q、K、V 三个投影矩阵<strong>打包成一个张量</strong> </td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">in_proj_bias</code></td> <td>\((3d,)\)</td> <td>1,536</td> <td>同样打包</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">out_proj.weight</code></td> <td>\((d,\, d)\)</td> <td>262,144</td> <td>多头拼接后的输出投影</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">out_proj.bias</code></td> <td>\((d,)\)</td> <td>512</td> <td> </td> </tr> <tr> <td>合计</td> <td> </td> <td>\(4d^2 + 4d = 1{,}050{,}624\)</td> <td> </td> </tr> </tbody> </table> </div> <p><code class="language-plaintext highlighter-rouge">in_proj_weight</code> 的打包是读 <code class="language-plaintext highlighter-rouge">state_dict</code> 时最容易困惑的一点：模型里看不到 <code class="language-plaintext highlighter-rouge">q_proj</code>、<code class="language-plaintext highlighter-rouge">k_proj</code>、<code class="language-plaintext highlighter-rouge">v_proj</code> 三个独立张量，只有一个 \((1536,\, 512)\) 的矩阵，前 512 行对应 Q、中间 512 行对应 K、最后 512 行对应 V。</p> <h3 id="32-返回值与-dropout-的位置">3.2 返回值与 dropout 的位置</h3> <div class="note-code"><pre>src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-                      key_padding_mask=src_key_padding_mask)[0]</pre></div> <p>返回的是一个二元组 <code class="language-plaintext highlighter-rouge">(attn_output, attn_output_weights)</code>，ACT 一律取 <code class="language-plaintext highlighter-rouge">[0]</code> 丢弃权重。<code class="language-plaintext highlighter-rouge">need_weights</code> 与 <code class="language-plaintext highlighter-rouge">average_attn_weights</code> 都保持 PyTorch 2.0.0 的默认值 True：内部按头计算的权重可视为 \((B,h,L_q,L_k)\)，返回前对头求平均，所以调用者实际得到的第二项是 \((B,L_q,L_k)\)。丢弃返回值不等于省略内部打分与 softmax 计算。</p> <p>构造时传入的 <code class="language-plaintext highlighter-rouge">dropout=0.1</code> 作用在 <strong>softmax 之后的注意力权重上</strong>，它与层里显式创建的 <code class="language-plaintext highlighter-rouge">self.dropout1</code>、<code class="language-plaintext highlighter-rouge">self.dropout2</code>、<code class="language-plaintext highlighter-rouge">self.dropout</code> 是不同的几处。统计 dropout 处数时必须说明口径：</p> <div class="note-tbl"> <table> <thead> <tr> <th>口径</th> <th>encoder layer</th> <th>decoder layer</th> </tr> </thead> <tbody> <tr> <td>只数显式 <code class="language-plaintext highlighter-rouge">nn.Dropout</code> 模块</td> <td>3 处（<code class="language-plaintext highlighter-rouge">dropout1</code>、FFN 内 <code class="language-plaintext highlighter-rouge">dropout</code>、<code class="language-plaintext highlighter-rouge">dropout2</code>）</td> <td>4 处（<code class="language-plaintext highlighter-rouge">dropout1</code>、<code class="language-plaintext highlighter-rouge">dropout2</code>、FFN 内 <code class="language-plaintext highlighter-rouge">dropout</code>、<code class="language-plaintext highlighter-rouge">dropout3</code>）</td> </tr> <tr> <td>加上注意力内部的权重 dropout</td> <td>4 处</td> <td>6 处</td> </tr> </tbody> </table> </div> <p>注意力的数学定义、为什么要除以 \(\sqrt{d_k}\)、多头为什么有用，见深度学习基础主线的注意力机制页，本页不重复。</p> <hr> <h2 id="四with_pos_embed为什么-qk-加而-v-不加">四、<code class="language-plaintext highlighter-rouge">with_pos_embed</code>：为什么 q、k 加而 v 不加</h2> <p>这是本页最值得记住的一节。<code class="language-plaintext highlighter-rouge">TransformerEncoderLayer</code> 与 <code class="language-plaintext highlighter-rouge">TransformerDecoderLayer</code> 各自定义了一份<strong>完全相同</strong>的方法（是复制而非继承）：</p> <div class="note-code"><pre>def with_pos_embed(self, tensor, pos: Optional[Tensor]):
-    return tensor if pos is None else tensor + pos</pre></div> <p>函数本身只有一行加法，关键在它被调用的<strong>位置</strong>。</p> <h3 id="41-三处调用的完整对照">4.1 三处调用的完整对照</h3> <div class="note-tbl"> <table> <thead> <tr> <th>调用点</th> <th>query</th> <th>key</th> <th>value</th> </tr> </thead> <tbody> <tr> <td>encoder 的 self-attention</td> <td><code class="language-plaintext highlighter-rouge">src + pos</code></td> <td><code class="language-plaintext highlighter-rouge">src + pos</code></td> <td> <code class="language-plaintext highlighter-rouge">src</code>（不加）</td> </tr> <tr> <td>decoder 的 self-attention</td> <td><code class="language-plaintext highlighter-rouge">tgt + query_pos</code></td> <td><code class="language-plaintext highlighter-rouge">tgt + query_pos</code></td> <td> <code class="language-plaintext highlighter-rouge">tgt</code>（不加）</td> </tr> <tr> <td>decoder 的 cross-attention</td> <td><code class="language-plaintext highlighter-rouge">tgt + query_pos</code></td> <td><code class="language-plaintext highlighter-rouge">memory + pos</code></td> <td> <code class="language-plaintext highlighter-rouge">memory</code>（不加）</td> </tr> </tbody> </table> </div> <p>第三行是三者中唯一 query 与 key 加的不是同一套编码的：query 加的是 action query 的位置嵌入，key 加的是视觉与状态 token 的位置编码。这与两者来自不同序列是一致的。</p> <h3 id="42-为什么-value-不加">4.2 为什么 value 不加</h3> <p>注意力打分发生在线性投影之后。对第 \(r\) 个头，准确的未归一化 logit 是</p> \[\ell_{ij}^{(r)} = \frac{ \left(W_Q^{(r)}(x_i+p_i)+b_Q^{(r)}\right)^\top \left(W_K^{(r)}(x_j+p_j)+b_K^{(r)}\right) }{\sqrt{d_h}} .\] <p>若只为观察内容项与位置项的来源而暂时省略偏置、缩放，并令 \(M_r=(W_Q^{(r)})^\top W_K^{(r)}\)，则可展开为：</p> \[(x_i+p_i)^\top M_r(x_j+p_j) = \underbrace{x_i^\top M_r x_j}_{\text{内容—内容}} +\underbrace{x_i^\top M_r p_j}_{\text{内容—位置}} +\underbrace{p_i^\top M_r x_j}_{\text{位置—内容}} +\underbrace{p_i^\top M_r p_j}_{\text{位置—位置}} .\] <p>四项说明内容与位置都可以影响注意力打分；由于中间还有可学习的非对称矩阵 \(M_r\)，第一项不应简单等同于普通余弦式“纯语义相似度”。位置编码加在 query 与 key 上，直接作用于这个<strong>打分</strong>过程。</p> <p>value 路径不同：注意力输出是 \(\sum_j\alpha_{ij}v_j\)，当前调用没有把原始 <code class="language-plaintext highlighter-rouge">pos</code> 或 <code class="language-plaintext highlighter-rouge">query_pos</code> 直接加到 value。位置仍会通过权重 \(\alpha_{ij}\) 间接改变取出的加权内容；而在深层网络中，<code class="language-plaintext highlighter-rouge">src</code>、<code class="language-plaintext highlighter-rouge">tgt</code> 或 <code class="language-plaintext highlighter-rouge">memory</code> 本身也已受先前位置相关计算影响。因此，准确结论是“本次调用不向 value 直接注入原始位置编码”，而不是“value 永远是纯内容”或“位置不决定取什么”。</p> <h3 id="43-每层都重新加一次">4.3 每层都重新加一次</h3> <p><code class="language-plaintext highlighter-rouge">pos</code> 与 <code class="language-plaintext highlighter-rouge">query_pos</code> 是作为参数传进每一层的，每层的 <code class="language-plaintext highlighter-rouge">forward_post</code> 都会重新调用一次 <code class="language-plaintext highlighter-rouge">with_pos_embed</code>。因此在 7 层 decoder 中，<code class="language-plaintext highlighter-rouge">query_embed</code> 一共参与了 7 次 self-attention 打分与 7 次 cross-attention 打分。</p> <p>这与只在输入端相加一次的写法有结构差别：逐层注入使每一层的 Q/K 投影都能直接访问同一套原始位置编码。至于位置影响是否会“稀释”、这种写法是否一定更优，不能仅由源码推出，需要专门的消融或表示分析。</p> <hr> <h2 id="五encoder-layer-内部逐行">五、encoder layer 内部逐行</h2> <p>官方默认配置与公开训练命令没有启用 <code class="language-plaintext highlighter-rouge">--pre_norm</code>，因此 <code class="language-plaintext highlighter-rouge">normalize_before=False</code>，<code class="language-plaintext highlighter-rouge">forward</code> 转发到 <code class="language-plaintext highlighter-rouge">forward_post</code>。源码保留了 <code class="language-plaintext highlighter-rouge">--pre_norm</code> 开关；用户显式启用后会改走 <code class="language-plaintext highlighter-rouge">forward_pre</code>，所以“恒为 False”不是类实现本身的约束。默认 post-norm 路径的核心计算如下：</p> <div class="note-code"><pre>def forward_post(self, src, src_mask=None, src_key_padding_mask=None, pos=None):
-    q = k = self.with_pos_embed(src, pos)
-    src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-                          key_padding_mask=src_key_padding_mask)[0]
-    src = src + self.dropout1(src2)
-    src = self.norm1(src)
-    src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
-    src = src + self.dropout2(src2)
-    src = self.norm2(src)
-    return src</pre></div> <h3 id="51-逐步拆解">5.1 逐步拆解</h3> <p>以真机主干 encoder 为例，序列长度 \(S = 1202\)、\(d = 512\)、\(f = 3200\)。</p> <div class="note-tbl"> <table> <thead> <tr> <th>步</th> <th>操作</th> <th>输出形状</th> <th>该步参数量</th> </tr> </thead> <tbody> <tr> <td>1</td> <td><code class="language-plaintext highlighter-rouge">q = k = src + pos</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>0</td> </tr> <tr> <td>2</td> <td><code class="language-plaintext highlighter-rouge">self_attn(q, k, value=src)</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>1,050,624</td> </tr> <tr> <td>3</td> <td><code class="language-plaintext highlighter-rouge">src + dropout1(src2)</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>0</td> </tr> <tr> <td>4</td> <td><code class="language-plaintext highlighter-rouge">norm1(src)</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>1,024</td> </tr> <tr> <td>5</td> <td> <code class="language-plaintext highlighter-rouge">linear1</code> 到 <code class="language-plaintext highlighter-rouge">relu</code> 到 <code class="language-plaintext highlighter-rouge">dropout</code> 到 <code class="language-plaintext highlighter-rouge">linear2</code> </td> <td>中间 \((1202,\, B,\, 3200)\)，输出 \((1202,\, B,\, 512)\)</td> <td>3,280,512</td> </tr> <tr> <td>6</td> <td><code class="language-plaintext highlighter-rouge">src + dropout2(src2)</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>0</td> </tr> <tr> <td>7</td> <td><code class="language-plaintext highlighter-rouge">norm2(src)</code></td> <td>\((1202,\, B,\, 512)\)</td> <td>1,024</td> </tr> </tbody> </table> </div> <p>单层合计 4,333,184 个参数。四层完全同构，形状全程不变——<strong>encoder 不改变序列长度，也不改变特征维</strong>。</p> <h3 id="52-两个子层共用同一个骨架">5.2 两个子层共用同一个骨架</h3> <p>第 2 到 4 步与第 5 到 7 步是同一个模式：</p> \[x \;\leftarrow\; \mathrm{LN}\big( x + \mathrm{Dropout}(f(x)) \big)\] <p>第一次 \(f\) 是多头自注意力，第二次 \(f\) 是前馈网络。归一化在残差相加<strong>之后</strong>，这就是 post-norm，详见第八节。</p> <h3 id="53-ffn-的具体形状">5.3 FFN 的具体形状</h3> <div class="note-code"><pre>self.linear1 = nn.Linear(d_model, dim_feedforward)   # 512 到 3200
-self.dropout = nn.Dropout(dropout)
-self.linear2 = nn.Linear(dim_feedforward, d_model)   # 3200 到 512
-self.activation = _get_activation_fn(activation)     # activation 默认 "relu"，返回 F.relu</pre></div> <p>顺序是 <code class="language-plaintext highlighter-rouge">linear1</code> 到 <code class="language-plaintext highlighter-rouge">relu</code> 到 <code class="language-plaintext highlighter-rouge">dropout</code> 到 <code class="language-plaintext highlighter-rouge">linear2</code>。ACT 把 <code class="language-plaintext highlighter-rouge">dim_feedforward</code> 设为 3200 而不是 DETR 默认的 2048，扩张比为 \(3200/512 = 6.25\)，高于标准 Transformer 常用的 4 倍。FFN 因此成为单层里参数量最大的部分，占 4,333,184 中的 3,280,512，即 <strong>75.7 percent</strong>。</p> <p><code class="language-plaintext highlighter-rouge">_get_activation_fn</code> 返回的是 <code class="language-plaintext highlighter-rouge">F.relu</code> 这个函数而不是模块，因此它不出现在 <code class="language-plaintext highlighter-rouge">state_dict</code> 里，也不计入参数量。</p> <h3 id="54-数据流图">5.4 数据流图</h3> <div class="note-fig"> <svg viewbox="0 0 880 250" role="img" aria-label="Transformer encoder 单层数据流图：输入先与位置编码相加得到 query 与 key，value 直接用输入；经多头自注意力、dropout、残差相加与层归一化；再经前馈网络的 512 到 3200 到 512 变换、dropout、残差相加与第二次层归一化后输出"> <line x1="40" y1="120" x2="812" y2="120" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.2"></line> <path d="M818,120 l-9,-5 l0,10 z" fill="var(--global-divider-color,#a8a8a8)"></path> <rect x="112" y="96" width="120" height="48" rx="4" fill="none" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.6"></rect> <rect x="300" y="96" width="66" height="48" rx="4" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.4"></rect> <rect x="452" y="84" width="150" height="72" rx="4" fill="none" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.6"></rect> <rect x="670" y="96" width="66" height="48" rx="4" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.4"></rect> <path d="M80,120 C80,40 290,40 290,108" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.2" stroke-dasharray="5 4"></path> <path d="M295,114 l-9,-5 l0,10 z" fill="var(--global-divider-color,#a8a8a8)"></path> <path d="M420,120 C420,40 660,40 660,108" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.2" stroke-dasharray="5 4"></path> <path d="M665,114 l-9,-5 l0,10 z" fill="var(--global-divider-color,#a8a8a8)"></path> <line x1="60" y1="120" x2="60" y2="184" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.2"></line> <line x1="60" y1="184" x2="150" y2="184" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.2"></line> <path d="M156,184 l-9,-5 l0,10 z" fill="var(--global-theme-color,#b509ac)"></path> <g font-size="11.5" fill="currentColor" opacity="0.85"> <text x="126" y="116">多头自注意力</text> <text x="126" y="134">q 与 k 加 pos</text> <text x="312" y="124">LayerNorm</text> <text x="468" y="106">前馈网络</text> <text x="468" y="124">512 到 3200</text> <text x="468" y="142">3200 到 512</text> <text x="682" y="124">LayerNorm</text> </g> <g font-size="11" fill="currentColor" opacity="0.6"> <text x="42" y="112">输入</text> <text x="770" y="112">输出</text> <text x="130" y="34">残差</text> <text x="500" y="34">残差</text> <text x="162" y="188">value 直接用输入，不加 pos</text> <text x="244" y="222">dropout 分别位于两处残差相加之前，以及前馈网络的两层之间</text> </g> </svg> <figcaption>示意图：encoder 单层的数据通路。实线为主干，虚线为残差旁路。归一化位于残差相加之后（post-norm）。图中未画出注意力内部作用在 softmax 权重上的那一处 dropout。</figcaption> </div> <p><code class="language-plaintext highlighter-rouge">forward_pre</code> 在源码里同样存在；官方默认配置不启用 <code class="language-plaintext highlighter-rouge">--pre_norm</code>，所以复现实验走 <code class="language-plaintext highlighter-rouge">forward_post</code>。若用户显式传入该开关，执行路径会改变。</p> <hr> <h2 id="六decoder-layer-内部逐行">六、decoder layer 内部逐行</h2> <p>decoder 层比 encoder 层多一个注意力子层，共 11 步：</p> <div class="note-code"><pre>def forward_post(self, tgt, memory, tgt_mask=None, memory_mask=None,
-                 tgt_key_padding_mask=None, memory_key_padding_mask=None,
-                 pos=None, query_pos=None):
-    q = k = self.with_pos_embed(tgt, query_pos)
-    tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
-                          key_padding_mask=tgt_key_padding_mask)[0]
-    tgt = tgt + self.dropout1(tgt2)
-    tgt = self.norm1(tgt)
-    tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt, query_pos),
-                               key=self.with_pos_embed(memory, pos),
-                               value=memory, attn_mask=memory_mask,
-                               key_padding_mask=memory_key_padding_mask)[0]
-    tgt = tgt + self.dropout2(tgt2)
-    tgt = self.norm2(tgt)
-    tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-    tgt = tgt + self.dropout3(tgt2)
-    tgt = self.norm3(tgt)
-    return tgt</pre></div> <div class="note-video-grid"> <div class="note-video"> <video controls="" muted="" loop="" playsinline="" preload="metadata"> <source src="https://tonyzhaozh.github.io/aloha/resources/robot_obs/prep_tape.mp4" type="video/mp4"></source> </video> <b>cross-attention 的 key 与 value 来自哪里</b> <p>这段四路观测正是 memory 的来源：图像经主干与 encoder 之后成为 1202 个 token，7 层 decoder 的 cross-attention 每一层都从这同一份 memory 重新投影出 key 与 value，memory 本身在整个解码过程中不再更新。</p> </div> </div> <h3 id="61-逐步拆解">6.1 逐步拆解</h3> <p>真机口径：<code class="language-plaintext highlighter-rouge">tgt</code> 长度 \(H = 90\)，<code class="language-plaintext highlighter-rouge">memory</code> 长度 \(S = 1202\)。</p> <div class="note-tbl"> <table> <thead> <tr> <th>步</th> <th>操作</th> <th>q 的来源</th> <th>k 与 v 的来源</th> <th>输出形状</th> </tr> </thead> <tbody> <tr> <td>1</td> <td><code class="language-plaintext highlighter-rouge">q = k = tgt + query_pos</code></td> <td><code class="language-plaintext highlighter-rouge">tgt</code></td> <td><code class="language-plaintext highlighter-rouge">tgt</code></td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>2</td> <td> <code class="language-plaintext highlighter-rouge">self_attn</code>，value 为 <code class="language-plaintext highlighter-rouge">tgt</code> </td> <td>同上</td> <td>同上</td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>3</td> <td>残差相加</td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>4</td> <td><code class="language-plaintext highlighter-rouge">norm1</code></td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>5</td> <td> <code class="language-plaintext highlighter-rouge">multihead_attn</code> 的 query 为 <code class="language-plaintext highlighter-rouge">tgt + query_pos</code> </td> <td><code class="language-plaintext highlighter-rouge">tgt</code></td> <td><strong><code class="language-plaintext highlighter-rouge">memory</code></strong></td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>6</td> <td>其 key 为 <code class="language-plaintext highlighter-rouge">memory + pos</code>，value 为 <code class="language-plaintext highlighter-rouge">memory</code> </td> <td> </td> <td> </td> <td>注意力矩阵 \((\cdot,\, 90,\, 1202)\)</td> </tr> <tr> <td>7</td> <td>残差相加</td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>8</td> <td><code class="language-plaintext highlighter-rouge">norm2</code></td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>9</td> <td>FFN，512 到 3200 到 512</td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>10</td> <td>残差相加</td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> <tr> <td>11</td> <td><code class="language-plaintext highlighter-rouge">norm3</code></td> <td> </td> <td> </td> <td>\((90,\, B,\, 512)\)</td> </tr> </tbody> </table> </div> <p>单层参数量 \(2 P_{\mathrm{MHA}} + P_{\mathrm{FFN}} + 3 P_{\mathrm{LN}} = 5{,}384{,}832\)。</p> <h3 id="62-三条容易被忽略的事实">6.2 三条容易被忽略的事实</h3> <div class="note-mini"> <div> <b>memory 在 7 层中从不更新</b>它由 encoder 一次算出，作为同一个张量传给全部 7 层。decoder 只读不写，序列长度 1202 在解码全程恒定。</div> <div> <b>没有 KV cache</b>每一层的 cross-attention 都要把这 1202 个 token 重新投影一次 key 与 value。7 层就投影 7 次。自回归生成中常用的 KV 缓存在这里不适用，因为不存在逐步生成。</div> <div> <b>self-attention 的 value 始终是 tgt 本身</b>不是加了 query_pos 的版本。这一点在第七节的零值推演中是关键。</div> </div> <h3 id="63-数据流图">6.3 数据流图</h3> <div class="note-fig"> <svg viewbox="0 0 880 270" role="img" aria-label="Transformer decoder 单层数据流图：先是 action query 之间的自注意力，query 与 key 加 query_pos；再是交叉注意力，query 加 query_pos 而 key 来自 memory 加 pos，value 为 memory 本身；最后是前馈网络。三处子层后各有一次层归一化"> <line x1="40" y1="150" x2="812" y2="150" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.2"></line> <path d="M818,150 l-9,-5 l0,10 z" fill="var(--global-divider-color,#a8a8a8)"></path> <rect x="92" y="126" width="116" height="48" rx="4" fill="none" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.6"></rect> <rect x="252" y="126" width="58" height="48" rx="4" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.4"></rect> <rect x="356" y="126" width="122" height="48" rx="4" fill="none" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.6"></rect> <rect x="520" y="126" width="58" height="48" rx="4" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.4"></rect> <rect x="620" y="126" width="94" height="48" rx="4" fill="none" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.6"></rect> <rect x="752" y="126" width="58" height="48" rx="4" fill="none" stroke="var(--global-divider-color,#a8a8a8)" stroke-width="1.4"></rect> <rect x="330" y="34" width="176" height="40" rx="4" fill="none" stroke="var(--global-divider-color,#8a8a8a)" stroke-width="1.5" stroke-dasharray="5 4"></rect> <line x1="418" y1="74" x2="418" y2="120" stroke="var(--global-divider-color,#8a8a8a)" stroke-width="1.3"></line> <path d="M418,126 l-5,-9 l10,0 z" fill="var(--global-divider-color,#8a8a8a)"></path> <line x1="56" y1="150" x2="56" y2="206" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.2"></line> <line x1="56" y1="206" x2="140" y2="206" stroke="var(--global-theme-color,#b509ac)" stroke-width="1.2"></line> <path d="M146,206 l-9,-5 l0,10 z" fill="var(--global-theme-color,#b509ac)"></path> <g font-size="11.5" fill="currentColor" opacity="0.85"> <text x="104" y="146">自注意力</text> <text x="104" y="164">q 与 k 加 query_pos</text> <text x="262" y="154">LN</text> <text x="366" y="146">交叉注意力</text> <text x="366" y="164">q 加 query_pos</text> <text x="530" y="154">LN</text> <text x="632" y="146">前馈网络</text> <text x="632" y="164">512 到 3200</text> <text x="762" y="154">LN</text> <text x="344" y="50">memory，长度 1202</text> <text x="344" y="66">k 加 pos，v 不加</text> </g> <g font-size="11" fill="currentColor" opacity="0.6"> <text x="40" y="142">tgt</text> <text x="152" y="210">value 为 tgt 本身，不加 query_pos</text> <text x="248" y="244">三处子层后各有一次残差相加与层归一化，图中残差旁路略去</text> </g> </svg> <figcaption>示意图：decoder 单层的三个子层。虚线框表示 memory 由外部传入、逐层复用。两种注意力的职能分工见子页 ④ 第 8.3 节，本图只表达张量来源与顺序。</figcaption> </div> <hr> <h2 id="七第一层-decoder-的零值传播eval-的严格结论与-train-的修正">七、第一层 decoder 的零值传播：eval 的严格结论与 train 的修正</h2> <p><code class="language-plaintext highlighter-rouge">tgt = torch.zeros_like(query_embed)</code> 使第一层 self-attention 的所有 value 在序列维相同；但“所有位置的输出完全相同”还需要关闭 dropout。下面把确定性的代数结论与训练态随机性分开。</p> <h3 id="71-共同前提第一层的-value-相同">7.1 共同前提：第一层的 value 相同</h3> <p>对第 \(r\) 个头、query 位置 \(i\) 与 key 位置 \(j\)：</p> \[q_i^{(r)}=W_Q^{(r)}e_i+b_Q^{(r)},\qquad k_j^{(r)}=W_K^{(r)}e_j+b_K^{(r)},\qquad v_j^{(r)}=W_V^{(r)}\mathbf 0+b_V^{(r)}=b_V^{(r)},\] <p>其中 \(e_i=\text{query\_pos}_i\)。Q/K 因位置嵌入而不同，但每个头的所有 value 都等于同一偏置。由此还有一个容易漏掉的梯度事实：第一层 self-attention 的 \(W_V\) 始终乘零输入，其 \(512\times512=262{,}144\) 个标量的任务梯度为零；\(b_V\) 仍可学习。由于 Q/K 与 V 打包在同一个 <code class="language-plaintext highlighter-rouge">in_proj_weight</code> 参数中，不能仅看整个参数的 <code class="language-plaintext highlighter-rouge">.grad</code> 是否非零来判断这个 V 子块。</p> <h3 id="72-eval-或关闭-dropout所有位置严格相同">7.2 eval 或关闭 dropout：所有位置严格相同</h3> <p>令</p> \[\alpha_{ij}^{(r)} = \operatorname{softmax}_j\!\left( \frac{(q_i^{(r)})^\top k_j^{(r)}}{\sqrt{d_h}} \right).\] <p>当注意力 dropout 关闭时，\(\sum_j\alpha_{ij}^{(r)}=1\)，所以</p> \[o_i^{(r)} =\sum_j\alpha_{ij}^{(r)}b_V^{(r)} =b_V^{(r)}.\] <p>拼接各头并做输出投影后，</p> \[y_i=W_O\,\operatorname{Concat}_r(b_V^{(r)})+b_O,\] <p>它与位置 \(i\)、query embedding 及 Q/K 权重无关。eval 模式下外部的 <code class="language-plaintext highlighter-rouge">dropout1</code> 也关闭，因此经过零残差和逐位置 LayerNorm 后，所有位置仍相同。这个结论只说明第一层 self-attention <strong>不能在确定性前向中制造位置之间的内容差异</strong>；它仍可贡献一个共享的学习向量。</p> <p>PyTorch 2.0.0 把 MHA 的 <code class="language-plaintext highlighter-rouge">in_proj_bias</code> 与 <code class="language-plaintext highlighter-rouge">out_proj.bias</code> 初始化为零，而 ACT 的 <code class="language-plaintext highlighter-rouge">_reset_parameters</code> 只重新初始化维度大于 1 的参数。因此刚初始化时 \(b_V=b_O=0\)，上式输出为零；训练更新偏置后，它在 eval 中可以成为非零共享向量。</p> <h3 id="73-train-模式两处-dropout-会破坏逐位置精确相等">7.3 train 模式：两处 dropout 会破坏逐位置精确相等</h3> <p>训练时，MHA 在 softmax 后对每个权重做 dropout。令 \(m_{ij}^{(r)}\sim\operatorname{Bernoulli}(1-p)\)，则</p> \[\widetilde{\alpha}_{ij}^{(r)} =\frac{m_{ij}^{(r)}}{1-p}\alpha_{ij}^{(r)},\qquad o_i^{(r)} =\left(\sum_j\widetilde{\alpha}_{ij}^{(r)}\right)b_V^{(r)}.\] <p>单次随机前向中，\(\sum_j\widetilde{\alpha}_{ij}^{(r)}\) 通常不等于 1，且可随头与 query 位置变化；随后独立的 <code class="language-plaintext highlighter-rouge">dropout1</code> 还会再次引入逐元素差异。虽然注意力 dropout 对未归一化加权和保持无偏，但 LayerNorm 是非线性的，不能据此断言归一化后的期望相同。训练态出现的这种差异是随机正则化效应，不应解释为部署时确定性的 action-query 内容交互；初始化全零偏置的特例下，这两处 dropout 也无法从零值制造差异。</p> <pre><code class="language-mermaid">flowchart TB
-  A["第一层 tgt = 0"] --&gt; B["Q/K 来自不同的 query_pos"]
-  A --&gt; C["每个头的 V_j = b_V，沿序列相同"]
-  C --&gt; D{"dropout 是否关闭？"}
-  B --&gt; D
-  D --&gt;|eval / 关闭| E["权重行和为 1：各位置得到同一共享向量"]
-  D --&gt;|train| F["权重 dropout 与 dropout1：单次前向可随机分化"]
-  E --&gt; G["cross-attention 以 query_pos 查询 memory"]
-  F --&gt; G
-  G --&gt; H["位置可获得不同的条件化表示"]
-  H --&gt; I["固定源码只将第 0 层输出送入动作头"]
-</code></pre> <h3 id="74-cross-attention后续层与-hs0">7.4 cross-attention、后续层与 <code class="language-plaintext highlighter-rouge">hs[0]</code> </h3> <p>eval 模式下第一次 cross-attention 的 query 为</p> \[q_i=c+\text{query\_pos}_i.\] <p>不同的 <code class="language-plaintext highlighter-rouge">query_pos</code> 使各位置可以形成不同的注意力分布，并从 memory 取回不同的条件化表示；“可以”不等于数学上保证不同，因为退化参数仍可能给出相同结果。原始 7 层栈内部，第 2 层开始接收到已条件化的 <code class="language-plaintext highlighter-rouge">tgt</code>，其 self-attention 因而具备建模 query-query 依赖的能力。</p> <p>但固定提交中的 <code class="language-plaintext highlighter-rouge">DETRVAE.forward</code> 使用 <code class="language-plaintext highlighter-rouge">self.transformer(...)[0]</code>。这里的 <code class="language-plaintext highlighter-rouge">[0]</code> 选择 <code class="language-plaintext highlighter-rouge">return_intermediate_dec=True</code> 所堆叠结果的第 0 个 decoder 层，而不是“取二元组第一个元素”。所以第 2–7 层虽然仍执行并消耗算力，其结果不进入动作头和任务损失，也不能解释当前实现的动作块连贯性；这些层没有来自动作损失的任务梯度，优化器的权重衰减仍可能更新其参数。</p> <div class="note-mini"> <div> <b>eval 的严格结论</b>第一层 self-attention 只能加入各位置共享的学习向量；位置分化主要来自 query_pos 参与的 cross-attention。</div> <div> <b>train 的随机修正</b>两处 dropout 可让单次训练前向在位置间不同，但这种随机差异不能等同于确定性的跨 action-query 信息交换。</div> <div> <b>实现边界</b>后续层在完整栈内具备 query-query 建模能力，但固定源码的动作输出只读取第 0 层。</div> </div> <div class="note-callout"> 自查时应先调用 <code>model.eval()</code> 并使用 <code>torch.no_grad()</code>，再给 <code>decoder.layers[0].self_attn</code> 注册 hook；MHA 的 hook 输出是二元组，应检查 <code>output[0]</code>。此时各位置应相同。若切回 <code>train()</code>，不能再把逐位置精确相等作为断言。观察索引 1 的层可以验证其内部表示已具备位置差异，但还需结合 <code>hs[0]</code> 才能判断它是否影响最终动作。 </div> <hr> <h2 id="八post-norm-与-pre-normact-的取值与三个连带事实">八、post-norm 与 pre-norm：ACT 的取值与三个连带事实</h2> <h3 id="81-取值来源">8.1 取值来源</h3> <p><code class="language-plaintext highlighter-rouge">normalize_before</code> 一路来自命令行参数 <code class="language-plaintext highlighter-rouge">--pre_norm</code>：</p> <div class="note-code"><pre>parser.add_argument('--pre_norm', action='store_true')</pre></div> <p><code class="language-plaintext highlighter-rouge">store_true</code> 的默认值是 False，而官方 README 给出的训练命令没有传这个开关，<code class="language-plaintext highlighter-rouge">imitate_episodes.py</code> 的 <code class="language-plaintext highlighter-rouge">policy_config</code> 也没有覆盖它。因此，官方默认复现实验的三个 Transformer 容器全部走 post-norm；这不是不可更改的架构常量，显式传入 <code class="language-plaintext highlighter-rouge">--pre_norm</code> 后会执行 <code class="language-plaintext highlighter-rouge">forward_pre</code>。</p> <h3 id="82-两种写法的残差路径差别">8.2 两种写法的残差路径差别</h3> <pre><code class="language-mermaid">flowchart LR
-  subgraph POST["post-norm，ACT 实际采用"]
-    A1["x"] --&gt; A2["子层 f"]
-    A2 --&gt; A3["dropout"]
-    A1 --&gt; A4["残差相加"]
-    A3 --&gt; A4
-    A4 --&gt; A5["LayerNorm"]
-    A5 --&gt; A6["输出"]
-  end
-  subgraph PRE["pre-norm，源码支持但默认不执行"]
-    B1["x"] --&gt; B2["LayerNorm"]
-    B2 --&gt; B3["子层 f"]
-    B3 --&gt; B4["dropout"]
-    B1 --&gt; B5["残差相加"]
-    B4 --&gt; B5
-    B5 --&gt; B6["输出"]
-  end
-</code></pre> <p>差别在于残差通路是否经过归一化：post-norm 的输出必然被 LayerNorm 重新缩放，pre-norm 的残差是从输入直达输出的恒等通路。两种写法的一般性讨论见深度学习基础主线的注意力机制页，本页不展开。</p> <h3 id="83-三个连带事实">8.3 三个连带事实</h3> <p>由 <code class="language-plaintext highlighter-rouge">normalize_before = False</code> 可以直接推出三处 norm 的取值：</p> <div class="note-tbl"> <table> <thead> <tr> <th>容器</th> <th>末尾 norm 的构造语句</th> <th>取值</th> <th>是否生效</th> </tr> </thead> <tbody> <tr> <td>主干 encoder</td> <td><code class="language-plaintext highlighter-rouge">nn.LayerNorm(d_model) if normalize_before else None</code></td> <td><code class="language-plaintext highlighter-rouge">None</code></td> <td>否</td> </tr> <tr> <td>CVAE encoder</td> <td>同上（<code class="language-plaintext highlighter-rouge">build_encoder</code> 里的同一行）</td> <td><code class="language-plaintext highlighter-rouge">None</code></td> <td>否</td> </tr> <tr> <td>主干 decoder</td> <td> <code class="language-plaintext highlighter-rouge">decoder_norm = nn.LayerNorm(d_model)</code>，<strong>无条件</strong> </td> <td>LayerNorm</td> <td>是</td> </tr> </tbody> </table> </div> <p>两个 encoder 的末尾都没有额外的归一化——<code class="language-plaintext highlighter-rouge">TransformerEncoder.forward</code> 里那句 <code class="language-plaintext highlighter-rouge">if self.norm is not None</code> 判假，循环完直接返回。这与 <code class="language-plaintext highlighter-rouge">transformer.py</code> 文件头注释所说的「extra LN at the end of encoder is removed」一致。</p> <p>decoder 那边则不同：<code class="language-plaintext highlighter-rouge">decoder_norm</code> 是无条件创建的，而且由于 <code class="language-plaintext highlighter-rouge">return_intermediate=True</code>，它在循环中对<strong>每一层</strong>的输出都作用了一次（见第十二节）。</p> <h3 id="84-与学习率设置的证据边界">8.4 与学习率设置的证据边界</h3> <p>官方配置同时采用 post-norm、\(10^{-5}\) 的恒定学习率，并且没有调度器（见子页 <a href="/knowledge/imitation-learning/act/training/">⑥ 训练目标与超参</a> 第 8.5 节）。这些设置确实在同一次训练方案中共同出现，但论文没有对归一化位置与学习率做联合消融，不能据此推出“小学习率是专为 post-norm 选择”或该组合优于其他方案。</p> <p>本页不判断哪种归一化位置更好；这依赖模型规模、层数、数据量与优化器设置，不能从源码本身得出。</p> <hr> <h2 id="九多头切分与注意力矩阵形状">九、多头切分与注意力矩阵形状</h2> <h3 id="91-切分">9.1 切分</h3> <p><code class="language-plaintext highlighter-rouge">nheads = 8</code>、<code class="language-plaintext highlighter-rouge">hidden_dim = 512</code>，因此每个头的维度是</p> \[d_{\text{head}} = \frac{512}{8} = 64, \qquad \frac{1}{\sqrt{d_{\text{head}}}} = \frac{1}{8} = 0.125\] <p><code class="language-plaintext highlighter-rouge">in_proj_weight</code> 的形状 \((3d,\, d)\) 与头数无关：投影仍然是一次 512 到 1536 的线性变换，之后才把 512 维切成 8 段 64 维分别做注意力，最后拼回 512 维过 <code class="language-plaintext highlighter-rouge">out_proj</code>。这就是第十一节要说的「<code class="language-plaintext highlighter-rouge">nheads</code> 不改变参数量」的原因。</p> <div class="note-video-grid"> <div class="note-video"> <video controls="" muted="" loop="" playsinline="" preload="metadata"> <source src="https://tonyzhaozh.github.io/aloha/resources/prep_tape.mp4" type="video/mp4"></source> </video> <b>序列长度由相机数决定</b> <p>与上一段是同一个任务的第三人称视角。真机用四路相机意味着 encoder 的序列长度是 1202，而自注意力矩阵按序列长度的平方增长，这是长序列部署时最直接的压力来源。</p> </div> </div> <h3 id="92-四处注意力的内部逐头矩阵形状">9.2 四处注意力的内部逐头矩阵形状</h3> <p>在固定的 PyTorch 2.0.0、<code class="language-plaintext highlighter-rouge">need_weights=True</code> 路径中，内部把批维与头维折叠，逐头 score / softmax 权重张量的形状可写成 \((B \cdot \text{nheads},\, L_q,\, L_k)\)。这不是调用者收到的返回形状：默认 <code class="language-plaintext highlighter-rouge">average_attn_weights=True</code> 会对头求平均，返回 \((B,L_q,L_k)\)，随后被 ACT 的 <code class="language-plaintext highlighter-rouge">[0]</code> 丢弃。</p> <div class="note-tbl"> <table> <thead> <tr> <th>注意力</th> <th>\(L_q\)</th> <th>\(L_k\)</th> <th>内部逐头形状（\(B = 8\)）</th> <th>fp32 名义容量</th> </tr> </thead> <tbody> <tr> <td>主干 encoder 自注意力</td> <td>1202</td> <td>1202</td> <td>\((64,\, 1202,\, 1202)\)</td> <td>352.7 MiB</td> </tr> <tr> <td>decoder 自注意力</td> <td>90</td> <td>90</td> <td>\((64,\, 90,\, 90)\)</td> <td>1.98 MiB</td> </tr> <tr> <td>decoder 交叉注意力</td> <td>90</td> <td>1202</td> <td>\((64,\, 90,\, 1202)\)</td> <td>26.4 MiB</td> </tr> <tr> <td>CVAE encoder 自注意力</td> <td>92</td> <td>92</td> <td>\((64,\, 92,\, 92)\)</td> <td>2.07 MiB</td> </tr> </tbody> </table> </div> <p>仿真单相机口径下，主干 encoder 的对应数字是 \((64,\, 302,\, 302)\) 与 22.3 MiB，相差约 15.8 倍。</p> <h3 id="93-这个量级意味着什么">9.3 这个量级意味着什么</h3> <p>按表中“显式物化、fp32、逐头”口径，主干 encoder 单层的 score / 权重张量名义容量为 352.7 MiB。训练时，autograd 可能让多层的反向所需中间量同时存活到 backward；不能描述为每层结束后立即释放，也不能把单层数字简单乘以层数当作峰值。论文报告在 11 GB RTX 2080 Ti 上训练，只是硬件事实，不能用来验证或反推出该实现的实际峰值显存。</p> <div class="note-callout"> 口径声明：上表按 <code>B 乘 nheads 乘 L_q 乘 L_k</code> 个 fp32 元素计算的是内部逐头张量的<b>名义容量</b>。PyTorch 2.0.0 在本页固定的 <code>need_weights=True</code> 分支会显式计算权重；但表中仍未计入 Q/K/V、softmax 与 dropout 中间量、其他激活、反向缓存、参数、梯度及优化器状态，因此既不是总显存，也不是通用的显存下界。实际峰值必须在固定软件版本、模式与批配置下测量。 </div> <p>自注意力的 \(O(n^2)\) 复杂度、以及各类降低该复杂度的方法，见深度学习基础主线的注意力机制页。</p> <hr> <h2 id="十掩码六个形参在-act-中的实际取值">十、掩码：六个形参在 ACT 中的实际取值</h2> <p><code class="language-plaintext highlighter-rouge">TransformerDecoder.forward</code> 一共有四个与掩码相关的形参（<code class="language-plaintext highlighter-rouge">tgt_mask</code>、<code class="language-plaintext highlighter-rouge">memory_mask</code>、<code class="language-plaintext highlighter-rouge">tgt_key_padding_mask</code>、<code class="language-plaintext highlighter-rouge">memory_key_padding_mask</code>），<code class="language-plaintext highlighter-rouge">TransformerEncoder.forward</code> 有两个（<code class="language-plaintext highlighter-rouge">mask</code>、<code class="language-plaintext highlighter-rouge">src_key_padding_mask</code>）。下面 10.2 的表按语义把两个容器的同类形参并成一行，因此表中是五行而不是六行。ACT 的取值非常简单，但必须逐个说清，因为「ACT 没有因果掩码」这一结论正是从这里来的。</p> <h3 id="101-追踪起点">10.1 追踪起点</h3> <div class="note-code"><pre>hs = self.transformer(src, None, self.query_embed.weight, pos,
-                      latent_input, proprio_input, self.additional_pos_embed.weight)[0]</pre></div> <p><code class="language-plaintext highlighter-rouge">DETRVAE.forward</code> 传给 <code class="language-plaintext highlighter-rouge">Transformer.forward</code> 的第二个实参是 <code class="language-plaintext highlighter-rouge">None</code>，它的形参名就是 <code class="language-plaintext highlighter-rouge">mask</code>。这一个 <code class="language-plaintext highlighter-rouge">None</code> 随后被同时用在两处：</p> <div class="note-code"><pre>tgt = torch.zeros_like(query_embed)
-memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
-                  pos=pos_embed, query_pos=query_embed)</pre></div> <p>源码里原本用于摊平掩码的那一行 <code class="language-plaintext highlighter-rouge"># mask = mask.flatten(1)</code> 是注释掉的，说明这条通路在 ACT 中从未被启用。</p> <h3 id="102-取值追踪表">10.2 取值追踪表</h3> <div class="note-tbl"> <table> <thead> <tr> <th>形参</th> <th>主干 encoder</th> <th>主干 decoder</th> <th>CVAE encoder</th> </tr> </thead> <tbody> <tr> <td> <code class="language-plaintext highlighter-rouge">src_mask</code> / <code class="language-plaintext highlighter-rouge">tgt_mask</code> </td> <td><code class="language-plaintext highlighter-rouge">None</code></td> <td> <code class="language-plaintext highlighter-rouge">None</code>（未传）</td> <td><code class="language-plaintext highlighter-rouge">None</code></td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">src_key_padding_mask</code></td> <td><code class="language-plaintext highlighter-rouge">None</code></td> <td>不适用</td> <td> <code class="language-plaintext highlighter-rouge">is_pad</code>，形状 \((B,\, H+2)\)</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">memory_mask</code></td> <td>不适用</td> <td> <code class="language-plaintext highlighter-rouge">None</code>（未传）</td> <td>不适用</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">memory_key_padding_mask</code></td> <td>不适用</td> <td><code class="language-plaintext highlighter-rouge">None</code></td> <td>不适用</td> </tr> <tr> <td><code class="language-plaintext highlighter-rouge">tgt_key_padding_mask</code></td> <td>不适用</td> <td> <code class="language-plaintext highlighter-rouge">None</code>（未传）</td> <td>不适用</td> </tr> </tbody> </table> </div> <p>在上表追踪的 attention mask 实参中，只有 CVAE encoder 的 <code class="language-plaintext highlighter-rouge">src_key_padding_mask</code> 非 <code class="language-plaintext highlighter-rouge">None</code>。它的前两列被强制置为 False，保证 CLS 与 qpos 两个位置不被这个 padding mask 屏蔽（见子页 <a href="/knowledge/imitation-learning/act/network/">⑨ 网络模型逐模块拆解</a> 第 6.5 节）。</p> <h3 id="103-两类掩码的语义差别">10.3 两类掩码的语义差别</h3> <div class="note-mini"> <div> <b>attn_mask</b>按 query 与 key 的<b>位置对</b>屏蔽，形状为 <code>(L_q, L_k)</code> 或带批与头维。因果掩码属于这一类：它屏蔽掉每个位置对其右侧全部位置的注意。</div> <div> <b>key_padding_mask</b>按 <b>key 的位置</b>屏蔽，形状为 <code>(B, L_k)</code>，对所有 query 一视同仁。它用于屏蔽 padding 出来的无效 token。</div> </div> <p>两者在 PyTorch 中的布尔语义一致：True 表示该位置<strong>被屏蔽</strong>。ACT 里 <code class="language-plaintext highlighter-rouge">is_pad</code> 的 dtype 正是 bool，值为 True 的位置是补齐出来的无效动作。</p> <h3 id="104-为什么这里没有因果掩码">10.4 为什么这里没有因果掩码</h3> <p><code class="language-plaintext highlighter-rouge">tgt_mask</code> 在 decoder 调用中从未被传入，取默认值 <code class="language-plaintext highlighter-rouge">None</code>，因此 \(H\) 个 action query 在自注意力里彼此完全可见，没有任何方向性约束。这是 ACT 能并行产生整段动作、而不是逐步自回归生成的结构前提。这一结论的完整论证、以及与自回归式 VLA 的分界，见子页 <a href="/knowledge/imitation-learning/act/transformer/">④ DETR-style Transformer</a> 第十一节；本节给的是形参级的取值追踪。</p> <hr> <h2 id="十一_get_clones-的深拷贝语义与初始化">十一、<code class="language-plaintext highlighter-rouge">_get_clones</code> 的深拷贝语义与初始化</h2> <h3 id="111-每一层的参数都是独立的">11.1 每一层的参数都是独立的</h3> <div class="note-code"><pre>def _get_clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])</pre></div> <p><code class="language-plaintext highlighter-rouge">TransformerEncoder</code> 与 <code class="language-plaintext highlighter-rouge">TransformerDecoder</code> 的 <code class="language-plaintext highlighter-rouge">__init__</code> 都用它来生成各层。<code class="language-plaintext highlighter-rouge">copy.deepcopy</code> 会<strong>完整复制参数张量</strong>，因此 4 层 encoder 是 4 组互不相干的参数，7 层 decoder 是 7 组。</p> <p>反证很直接：若各层共享参数，4 层 encoder 只需 4,333,184 个参数；实际是 17,332,736，正好是 4 倍。</p> <h3 id="112-初始化路径的差异">11.2 初始化路径的差异</h3> <p><code class="language-plaintext highlighter-rouge">Transformer.__init__</code> 的最后一步是：</p> <div class="note-code"><pre>def _reset_parameters(self):
-    for p in self.parameters():
-        if p.dim() &gt; 1:
-            nn.init.xavier_uniform_(p)</pre></div> <p>它在 <code class="language-plaintext highlighter-rouge">_get_clones</code> <strong>之后</strong>执行，遍历的是 <code class="language-plaintext highlighter-rouge">Transformer</code> 对象下的全部参数，因此主干 encoder 与 decoder 的各层在重置后<strong>彼此不同</strong>。</p> <p>而 CVAE encoder 由 <code class="language-plaintext highlighter-rouge">build_encoder()</code> 在 <code class="language-plaintext highlighter-rouge">Transformer</code> 之外单独构造，<strong>不经过这次重置</strong>。它的 4 层来自同一个 <code class="language-plaintext highlighter-rouge">TransformerEncoderLayer</code> 实例的深拷贝，因此在初始化时刻<strong>逐位相同</strong>；训练开始后，各层收到的梯度不同，参数随之分化。</p> <p>本页只如实记录这条源码事实，不评价它是否为有意设计。</p> <h3 id="113-dim--1-这个条件的边界">11.3 <code class="language-plaintext highlighter-rouge">dim &gt; 1</code> 这个条件的边界</h3> <p>xavier 重置只作用于维度大于 1 的参数，这把两类参数排除在外：</p> <div class="note-tbl"> <table> <thead> <tr> <th>参数</th> <th>维度</th> <th>是否经 xavier</th> <th>实际初始化</th> </tr> </thead> <tbody> <tr> <td> <code class="language-plaintext highlighter-rouge">in_proj_weight</code>、<code class="language-plaintext highlighter-rouge">out_proj.weight</code>、<code class="language-plaintext highlighter-rouge">linear1.weight</code>、<code class="language-plaintext highlighter-rouge">linear2.weight</code> </td> <td>2</td> <td>是</td> <td>xavier uniform</td> </tr> <tr> <td>上述各层的 bias</td> <td>1</td> <td>否</td> <td>PyTorch 默认</td> </tr> <tr> <td> <code class="language-plaintext highlighter-rouge">LayerNorm.weight</code> 与 <code class="language-plaintext highlighter-rouge">LayerNorm.bias</code> </td> <td>1</td> <td>否</td> <td>全 1 与全 0</td> </tr> </tbody> </table> </div> <p><code class="language-plaintext highlighter-rouge">Transformer</code> 对象之外的模块同样不受影响：三个 <code class="language-plaintext highlighter-rouge">nn.Embedding</code>（<code class="language-plaintext highlighter-rouge">query_embed</code>、<code class="language-plaintext highlighter-rouge">cls_embed</code>、<code class="language-plaintext highlighter-rouge">additional_pos_embed</code>）用的是默认的标准正态初始化，与 xavier 的量级不同；各个 <code class="language-plaintext highlighter-rouge">nn.Linear</code> 投影层用的是 PyTorch 默认初始化。还需注意，CVAE encoder 中的 <code class="language-plaintext highlighter-rouge">MultiheadAttention</code> 保留其自身的混合默认初始化：<code class="language-plaintext highlighter-rouge">in_proj_weight</code> 为 Xavier，<code class="language-plaintext highlighter-rouge">in_proj_bias</code> 与 <code class="language-plaintext highlighter-rouge">out_proj.bias</code> 为零，而 <code class="language-plaintext highlighter-rouge">out_proj.weight</code> 沿用 <code class="language-plaintext highlighter-rouge">Linear</code> 的默认初始化，不能概括成“所有二维权重均为 Kaiming”。</p> <div class="note-callout"> 自查方法：比较 <code>model.transformer.encoder.layers[0].linear1.weight</code> 与 <code>layers[1].linear1.weight</code>，二者应当不同；再比较 <code>model.encoder.layers[0]</code> 与 <code>model.encoder.layers[1]</code> 的同名参数（注意这里的 <code>model.encoder</code> 是 CVAE encoder），在未训练的模型上二者应当逐位相同。 </div> <hr> <h2 id="十二两个容器类的循环与-return_intermediate">十二、两个容器类的循环与 <code class="language-plaintext highlighter-rouge">return_intermediate</code> </h2> <h3 id="121-transformerencoderforward">12.1 <code class="language-plaintext highlighter-rouge">TransformerEncoder.forward</code> </h3> <div class="note-code"><pre>output = src
-for layer in self.layers:
-    output = layer(output, src_mask=mask,
-                   src_key_padding_mask=src_key_padding_mask, pos=pos)
-if self.norm is not None:
-    output = self.norm(output)
-return output</pre></div> <p>极简：循环 4 次，<code class="language-plaintext highlighter-rouge">self.norm</code> 为 <code class="language-plaintext highlighter-rouge">None</code> 故末尾什么都不做。注意 <code class="language-plaintext highlighter-rouge">pos</code> 是同一个张量被传给每一层，与第 4.3 节说的「每层重新加一次」一致。</p> <h3 id="122-transformerdecoderforward">12.2 <code class="language-plaintext highlighter-rouge">TransformerDecoder.forward</code> </h3> <div class="note-code"><pre>output = tgt
-intermediate = []
-for layer in self.layers:
-    output = layer(output, memory, tgt_mask=tgt_mask, ...,
-                   pos=pos, query_pos=query_pos)
-    if self.return_intermediate:
-        intermediate.append(self.norm(output))
-if self.norm is not None:
-    output = self.norm(output)
-    if self.return_intermediate:
-        intermediate.pop()
-        intermediate.append(output)
-if self.return_intermediate:
-    return torch.stack(intermediate)
-return output.unsqueeze(0)</pre></div> <p>三段逻辑：</p> <div class="note-tbl"> <table> <thead> <tr> <th>段</th> <th>做了什么</th> <th>说明</th> </tr> </thead> <tbody> <tr> <td>循环内</td> <td>每层输出都过一次 <code class="language-plaintext highlighter-rouge">self.norm</code> 后 append</td> <td>7 个元素全部是归一化后的值</td> </tr> <tr> <td>循环后</td> <td>对最终输出再过一次 <code class="language-plaintext highlighter-rouge">self.norm</code>，然后 <code class="language-plaintext highlighter-rouge">pop</code> 掉末位、<code class="language-plaintext highlighter-rouge">append</code> 新值</td> <td>净效果是把末位替换为一个等值重算的结果</td> </tr> <tr> <td>返回</td> <td><code class="language-plaintext highlighter-rouge">torch.stack(intermediate)</code></td> <td>形状 \((7,\, H,\, B,\, 512)\)</td> </tr> </tbody> </table> </div> <p>最后那个 <code class="language-plaintext highlighter-rouge">else</code> 分支同样值得注意：<code class="language-plaintext highlighter-rouge">return_intermediate=False</code> 时返回的是 <code class="language-plaintext highlighter-rouge">output.unsqueeze(0)</code>，前面照样补了一个长度为 1 的维。这解释了为什么调用方无论如何都可以写 <code class="language-plaintext highlighter-rouge">[0]</code> 而不报错。</p> <h3 id="123-形状流转">12.3 形状流转</h3> <div class="note-tbl"> <table> <thead> <tr> <th>位置</th> <th>形状</th> </tr> </thead> <tbody> <tr> <td> <code class="language-plaintext highlighter-rouge">TransformerDecoder</code> 返回</td> <td>\((7,\, H,\, B,\, 512)\)</td> </tr> <tr> <td> <code class="language-plaintext highlighter-rouge">Transformer.forward</code> 的 <code class="language-plaintext highlighter-rouge">hs.transpose(1, 2)</code> </td> <td>\((7,\, B,\, H,\, 512)\)</td> </tr> <tr> <td> <code class="language-plaintext highlighter-rouge">DETRVAE.forward</code> 取 <code class="language-plaintext highlighter-rouge">[0]</code> </td> <td>\((B,\, H,\, 512)\)</td> </tr> </tbody> </table> </div> <p>DETR 的最终预测使用最后一个 decoder layer；启用辅助损失时，前 5 层的预测还会获得辅助监督。ACT 保留了 <code class="language-plaintext highlighter-rouge">return_intermediate_dec=True</code>，却只取<strong>第 1 个 decoder layer 的输出（零基索引 <code class="language-plaintext highlighter-rouge">[0]</code>）</strong>。因此动作头只依赖该层与共享的 <code class="language-plaintext highlighter-rouge">decoder_norm</code>；第 2–7 层虽然执行前向，却不是动作损失的函数祖先，不获得任务梯度，AdamW 的权重衰减仍可能更新其参数。这处语义漂移的完整事实链与自查方法已在子页 <a href="/knowledge/imitation-learning/act/transformer/">④ DETR-style Transformer</a> 第十节给出。</p> <pre><code class="language-mermaid">flowchart TB
-  T0["tgt 全零，(H, B, 512)"] --&gt; L0["decoder layer 0"]
-  M["memory，(1202, B, 512)"] --&gt; L0
-  L0 --&gt; N0["decoder_norm"]
-  N0 --&gt; I0["intermediate[0]"]
-  L0 --&gt; L1["decoder layer 1"]
-  M --&gt; L1
-  L1 --&gt; N1["decoder_norm"]
-  N1 --&gt; I1["intermediate[1]"]
-  L1 --&gt; LDOT["... 直到 layer 6"]
-  M --&gt; LDOT
-  LDOT --&gt; I6["intermediate[6]，循环后被等值重算一次"]
-  I0 --&gt; ST["torch.stack 得到 (7, H, B, 512)"]
-  I1 --&gt; ST
-  I6 --&gt; ST
-  ST --&gt; TR["transpose 到 (7, B, H, 512)"]
-  TR --&gt; IDX["DETRVAE 取 [0]，即 layer 0 的输出"]
-</code></pre> <hr> <h2 id="十三逐层参数量与计算量的解析推导">十三、逐层参数量与计算量的解析推导</h2> <p>本节给推导过程与算量，模块级的参数量结果表在子页 <a href="/knowledge/imitation-learning/act/network/">⑨ 网络模型逐模块拆解</a> 第十三节。</p> <h3 id="131-参数量">13.1 参数量</h3> <p>记 \(d = 512\)、\(f = 3200\)。多头注意力的四个参数张量已在第 3.1 节列出：</p> \[P_{\mathrm{MHA}} = \underbrace{3d^2 + 3d}_{\text{in\_proj}} + \underbrace{d^2 + d}_{\text{out\_proj}} = 4d^2 + 4d = 1{,}050{,}624\] <p>前馈网络两层：</p> \[P_{\mathrm{FFN}} = (df + f) + (fd + d) = 2df + f + d = 3{,}280{,}512\] <p>LayerNorm 的 weight 与 bias 各 \(d\) 维：</p> \[P_{\mathrm{LN}} = 2d = 1{,}024\] <p>encoder layer 有一个注意力、一个 FFN、两个 LayerNorm：</p> \[P_{\text{enc-layer}} = P_{\mathrm{MHA}} + P_{\mathrm{FFN}} + 2 P_{\mathrm{LN}} = 4{,}333{,}184\] <p>decoder layer 多一个注意力与一个 LayerNorm：</p> \[P_{\text{dec-layer}} = 2 P_{\mathrm{MHA}} + P_{\mathrm{FFN}} + 3 P_{\mathrm{LN}} = 5{,}384{,}832\] <p>三个容器合计包含两个 4 层 encoder、一个 7 层 decoder，以及 decoder 容器末尾的共享 LayerNorm：</p> \[P_{\text{3 containers}} =8P_{\text{enc-layer}}+7P_{\text{dec-layer}}+P_{\mathrm{LN}} =72{,}360{,}320,\] <p>约占整个 83.9M 参数模型的 86.2 percent。</p> <h3 id="132-计算量">13.2 计算量</h3> <p>按乘加（MAC）计。记 encoder 序列长 \(S\)、decoder query 数 \(H\)。</p> <p>encoder 单层：</p> \[C_{\text{enc}} = \underbrace{4Sd^2}_{\text{四个投影}} + \underbrace{2S^2 d}_{\text{打分与取值}} + \underbrace{2Sdf}_{\text{FFN}}\] <p>decoder 单层：</p> \[C_{\text{dec}} = \underbrace{\big(4Hd^2 + 2H^2 d\big)}_{\text{自注意力}} + \underbrace{\big(2Hd^2 + 2Sd^2 + 2HSd\big)}_{\text{交叉注意力}} + \underbrace{2Hdf}_{\text{FFN}}\] <p>交叉注意力那一项的构成：query 与输出投影各作用在 \(H\) 个位置上，key 与 value 投影作用在 \(S\) 个位置上，打分与取值各是 \(HSd\)。</p> <h3 id="133-两套口径代入">13.3 两套口径代入</h3> <div class="note-tbl"> <table> <thead> <tr> <th>部件</th> <th>仓库仿真 / arXiv v1 配置（\(S = 302\)，\(H = 100\)）</th> <th>最终项目论文真机配置（\(S = 1202\)，\(H = 90\)）</th> </tr> </thead> <tbody> <tr> <td>encoder 单层：投影</td> <td>0.317 G</td> <td>1.260 G</td> </tr> <tr> <td>encoder 单层：注意力矩阵</td> <td>0.093 G</td> <td>1.479 G</td> </tr> <tr> <td>encoder 单层：FFN</td> <td>0.990 G</td> <td>3.939 G</td> </tr> <tr> <td>encoder 单层合计</td> <td>1.400 G</td> <td>6.679 G</td> </tr> <tr> <td>decoder 单层合计</td> <td>0.684 G</td> <td>1.186 G</td> </tr> <tr> <td>主干 4 层 encoder 加 7 层 decoder</td> <td>10.39 G</td> <td>35.01 G</td> </tr> <tr> <td>CVAE encoder 4 层（传入目标动作时）</td> <td>1.81 G</td> <td>1.63 G</td> </tr> </tbody> </table> </div> <h3 id="134-一条反直觉但可验证的结论">13.4 一条反直觉但可验证的结论</h3> <p>把视觉主干的算量放进来对比：ResNet-18 在 224×224 输入下约 <strong>1.814 GMAC</strong>（公开的标准口径），480×640 的像素数是它的 6.12 倍，因此单路约 11.11 GMAC，四路合计约 <strong>44.4 GMAC</strong>。注意这个 1.814 与上表 CVAE encoder 那一行的 1.81 G 只是数值接近，两者是彼此无关的两个量。</p> \[44.4\ \mathrm{GMAC}\ (\text{四路 ResNet-18}) \;&gt;\; 35.0\ \mathrm{GMAC}\ (\text{主干 4 层 encoder 加 7 层 decoder})\] <p>在这个只比较“四路 ResNet-18”与“主 Transformer”的解析口径下，视觉主干约为后者的 1.27 倍，是较大的单一计算类别，但两者仍处于同一数量级；这不能直接等同于端到端耗时占比。参数量的分布则相反：Transformer 占 86.2 percent，主干约占 13.3 percent。参数多与算量大是两件事，前者取决于权重规模，后者还取决于权重被复用的次数。</p> <div class="note-callout"> 口径声明：以上全部为按结构的<b>解析核算</b>，按乘加计，不含 LayerNorm、softmax、激活函数、dropout 这类逐元素算子的开销，也不含框架调度与内存搬运。ResNet-18 的 1.814 GMAC 取自公开的标准口径（torchvision resnet18 在 224×224 下的常见报告值）。右端 35.01 G 统计固定源码实际执行的 4 层主干 encoder 与 7 层 decoder；即使第一层 V 输入为零、后 6 层不影响 `a_hat`，普通稠密算子也不会自动跳过这些计算。CVAE encoder 仅在传入目标动作的前向中执行。实际吞吐依赖硬件与实现，本页不给实测耗时。 </div> <hr> <h2 id="十四三方对照标准-nlp-decoderdetr-原版act">十四、三方对照：标准 NLP decoder、DETR 原版、ACT</h2> <div class="note-tbl"> <table> <thead> <tr> <th>项</th> <th>标准 NLP decoder</th> <th>DETR 原版</th> <th>ACT</th> </tr> </thead> <tbody> <tr> <td>decoder 的输入</td> <td>已生成的 token 序列</td> <td>全零张量</td> <td>全零张量</td> </tr> <tr> <td>query 的来源</td> <td>词嵌入加位置编码</td> <td>可学习的 object query</td> <td>可学习的 action query</td> </tr> <tr> <td>位置编码注入次数</td> <td>通常 1 次（输入端）</td> <td>每层</td> <td>每层</td> </tr> <tr> <td>因果掩码</td> <td>有</td> <td>无</td> <td>无</td> </tr> <tr> <td>key padding mask</td> <td>有（屏蔽 padding）</td> <td>有（屏蔽图像 padding 区域）</td> <td>主干无，仅 CVAE encoder 有</td> </tr> <tr> <td>归一化位置</td> <td>视实现而定</td> <td>可配置，默认 post-norm</td> <td>post-norm</td> </tr> <tr> <td>encoder 末尾 norm</td> <td>通常有</td> <td>可配置，默认无</td> <td>无</td> </tr> <tr> <td>decoder 末尾 norm</td> <td>通常有</td> <td>有</td> <td>有，且作用于每层中间输出</td> </tr> <tr> <td>encoder 与 decoder 层数</td> <td>常见 6 与 6</td> <td>6 与 6</td> <td>4 与 7</td> </tr> <tr> <td>中间层输出的用途</td> <td>一般不返回</td> <td>启用辅助损失时监督前 5 层；最终预测用末层</td> <td>返回但只取第 1 个 decoder layer（索引 <code class="language-plaintext highlighter-rouge">[0]</code>）</td> </tr> <tr> <td>KV 缓存</td> <td>推理时使用</td> <td>不适用</td> <td>不适用</td> </tr> <tr> <td>decoder 是否自回归</td> <td>是</td> <td>否</td> <td>否</td> </tr> <tr> <td>完整模型的训练/部署路径</td> <td>teacher forcing 与自由生成不同</td> <td>主体拓扑相同</td> <td>不同：有目标动作时走后验并采样 \(z\)；rollout 跳过后验并令 \(z=0\)</td> </tr> </tbody> </table> </div> <p>ACT 的主 Transformer decoder 在有目标动作的前向与 rollout 中都采用一次并行解码，不使用 action token 的 teacher forcing，也不存在逐步自由生成；但完整模型路径并不相同，因为后验 encoder 是否执行以及潜变量来源不同，训练态还会启用 dropout。完整论证见子页 <a href="/knowledge/imitation-learning/act/transformer/">④ DETR-style Transformer</a> 第十一节。</p> <hr> <h2 id="本页实际参考网页">本页实际参考网页</h2> <p>本页的逐行描述与全部算量推导来自源码逐段核对，下列资料在编写时逐条打开、提取正文比对过。</p> <ol> <li> <p><a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/models/transformer.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：detr/models/transformer.py</a><br> 核验内容：本页的主来源。五个类的完整定义；<code class="language-plaintext highlighter-rouge">Transformer.forward</code> 中 seq-first 的形状处理与 <code class="language-plaintext highlighter-rouge">mask</code> 实参；<code class="language-plaintext highlighter-rouge">with_pos_embed</code> 的三处调用；post-norm / pre-norm 两条路径；<code class="language-plaintext highlighter-rouge">_get_clones</code>、<code class="language-plaintext highlighter-rouge">_reset_parameters</code>；decoder 中间结果堆叠，以及 <code class="language-plaintext highlighter-rouge">return_intermediate_dec=True</code>。本页按提交 <code class="language-plaintext highlighter-rouge">742c753c0d4a5d87076c8f69e5628c79a8cc5488</code> 固定证据，避免 <code class="language-plaintext highlighter-rouge">main</code> 后续变化造成描述漂移。</p> </li> <li> <p><a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/models/detr_vae.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：detr/models/detr_vae.py</a> 与 <a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/policy.py" rel="external nofollow noopener" target="_blank">policy.py</a><br> 核验内容：主干 mask 的入口、CVAE padding mask、训练/部署的潜变量分支、<code class="language-plaintext highlighter-rouge">hs[0]</code> 与动作头连接关系。</p> </li> <li> <p><a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/main.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：detr/main.py</a> 与 <a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/conda_env.yaml" rel="external nofollow noopener" target="_blank">conda_env.yaml</a><br> 核验内容：<code class="language-plaintext highlighter-rouge">--pre_norm</code> 是可选开关；环境文件固定 PyTorch 2.0.0，因此本页按该版本解释 MHA 的 dropout、返回形状与初始化。</p> </li> <li> <p><a href="https://pytorch.org/docs/2.0/generated/torch.nn.MultiheadAttention.html" rel="external nofollow noopener" target="_blank">PyTorch 2.0 nn.MultiheadAttention 官方文档</a><br> 核验内容：<code class="language-plaintext highlighter-rouge">batch_first=False</code> 的输入约定；<code class="language-plaintext highlighter-rouge">need_weights=True</code> 与 <code class="language-plaintext highlighter-rouge">average_attn_weights=True</code> 的默认行为；返回形状；注意力 dropout；两类 mask 的形状与布尔语义。</p> </li> <li> <p><a href="https://github.com/pytorch/pytorch/blob/v2.0.0/torch/nn/modules/activation.py" rel="external nofollow noopener" target="_blank">PyTorch v2.0.0：activation.py</a> 与 <a href="https://github.com/pytorch/pytorch/blob/v2.0.0/torch/nn/functional.py" rel="external nofollow noopener" target="_blank">functional.py</a><br> 核验内容：Q/K/V 的打包参数、MHA 偏置初始化、softmax 后 dropout、按头平均返回权重，以及 <code class="language-plaintext highlighter-rouge">need_weights=True</code> 分支的内部计算。</p> </li> <li> <p><a href="https://github.com/facebookresearch/detr/blob/29901c51d7fe8712168b8d0d64351170bc0f83e0/models/transformer.py" rel="external nofollow noopener" target="_blank">DETR 固定提交：models/transformer.py</a> 与 <a href="https://github.com/facebookresearch/detr/blob/29901c51d7fe8712168b8d0d64351170bc0f83e0/models/detr.py" rel="external nofollow noopener" target="_blank">models/detr.py</a><br> 核验内容：可学习 object query、零 <code class="language-plaintext highlighter-rouge">tgt</code>、逐层位置注入、可配置 <code class="language-plaintext highlighter-rouge">normalize_before</code>，以及启用 <code class="language-plaintext highlighter-rouge">aux_loss</code> 时对中间层预测施加辅助损失。</p> </li> <li> <p><a href="https://arxiv.org/abs/2304.13705v1" rel="external nofollow noopener" target="_blank">ACT arXiv v1</a> 与 <a href="https://tonyzhaozh.github.io/aloha/aloha.pdf" rel="external nofollow noopener" target="_blank">最终项目论文 PDF</a><br> 核验内容：arXiv v1 / 仓库仿真口径的 \(H=100\)，以及最终项目论文真机口径的 \(H=90\)；同时核对 batch size、层数、隐藏维、头数与 dropout。两个版本的数字不混写成唯一配置。</p> </li> <li> <p><a href="https://tonyzhaozh.github.io/aloha/" rel="external nofollow noopener" target="_blank">ALOHA 与 ACT 官方项目页</a><br> 核验内容：真机四路相机配置；本页两段外链视频的来源。</p> </li> </ol> <div class="note-callout"> 本页所有参数量与计算量均为按源码结构的<b>解析核算</b>，按乘加计，不含逐元素算子与框架开销。第九节只给出内部逐头 attention 张量的理论容量，不提供实测总显存或峰值显存；实际吞吐、显存和单步耗时必须在固定软硬件与运行模式下测量。 </div> <div class="note-nav"> <a href="/knowledge/imitation-learning/act/network/">上一页：⑨ 网络模型逐模块拆解</a> <span class="sep">/</span><a href="/knowledge/imitation-learning/act/">返回：ACT 专题总览</a> <span class="sep">/</span><a href="/knowledge/imitation-learning/act/limits/">下一页：⑪ 能力边界的底层原因</a> <span class="sep">/</span><a href="/knowledge/imitation-learning/act/transformer/">④ DETR-style Transformer</a> <span class="sep">/</span><a href="/knowledge/foundations/attention/">注意力机制</a> <span class="sep">/</span><a href="/knowledge/foundations/positional-encoding/">位置编码</a> </div> </article> </div> </div> </div> </div> <footer class="fixed-bottom" role="contentinfo"> <div class="container mt-0"> © Copyright 2026 DDS . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>. </div> </footer> <script>
+</script>
+
+<link rel="stylesheet" href="/assets/css/knowledge-act.css">
+
+<nav class="act-breadcrumb" aria-label="面包屑"><a href="/knowledge/">知识库</a><span class="sep" aria-hidden="true">/</span><a href="/knowledge/imitation-learning/">机器人模仿学习与 VLA</a><span class="sep" aria-hidden="true">/</span><a href="/knowledge/imitation-learning/act/">ACT</a><span class="sep" aria-hidden="true">/</span><span aria-current="page">Attention 内部机制</span></nav>
+
+<div class="act-hero">
+  <p class="act-eyebrow">ADVANCED ENGINEERING · Q/K/V → MASK → RESIDUAL → NORM</p>
+  <p><strong>本页的唯一任务：定位 ACT 每次 attention 的 Q/K/V 来自哪里、原始位置编码在哪里直接注入、哪些 mask 实参真正生效。</strong></p>
+  <div class="act-callout" data-kind="route">
+    <p><strong>可跳过：</strong>这是高级工程页，不属于 ACT 核心学习路线。可从 Network 主线进入，也可从 Network Analysis 可选分支合流；两条前驱看到同一正文，唯一后继都是 Reproduction。&lt;/div&gt;</p>
+    <div class="act-grid act-grid-2" aria-label="四个 Attention 运行上下文速查">
+  <div class="act-card">
+<small>CVAE ENCODER SELF</small><strong>Q=K=encoder_input+pos_table</strong><span>V=encoder_input；唯一有效 padding mask 为 <code>[False,False,is_pad...]</code>。</span>
+</div>
+  <div class="act-card">
+<small>MAIN ENCODER SELF</small><strong>Q=K=src+pos</strong><span>V=src；latent/proprio可学习位置与视觉二维正弦位置拼接；mask=None。</span>
+</div>
+  <div class="act-card">
+<small>DECODER SELF</small><strong>Q=K=tgt+query_pos</strong><span>V=tgt；<code>tgt_mask=None</code>，H 个 query slot 可相互注意。</span>
+</div>
+  <div class="act-card">
+<small>DECODER CROSS</small><strong>Q=tgt+query_pos</strong><span>K=memory+pos，V=memory；query 长 H，key/value 长 S。</span>
+</div>
+</div>
+    <div class="act-actions">
+<a href="/knowledge/imitation-learning/act/network/">前驱 A：Network</a><a href="/knowledge/imitation-learning/act/network-analysis/">前驱 B：Network Analysis（可选合流）</a><a class="primary" href="/knowledge/imitation-learning/act/reproduction/">下一步：Reproduction</a>
+</div>
+    <div class="act-callout" data-kind="warning">
+      <p><strong>计数口径：</strong>四个运行上下文只落在三个源码 MHA 调用点：encoder layer 一个调用点被两种 encoder 容器复用，decoder layer 内有 self/cross 两个调用点；不能写成四套独立实现。&lt;/div&gt;</p>
+    </div>
+
+    <p><span id="prerequisites" class="act-sr-only">阅读门槛锚点</span></p>
+    <h2 id="attention-">阅读门槛与最小 Attention 先修</h2>
+
+    <p>只需要三条先修：Attention 按 <code>softmax(QKᵀ/√d_h)V</code> 聚合 value；self-attention 的 Q/K/V 来自同一序列，cross-attention 的 query 与 key/value 来自不同序列；固定配置把 512 维分成 <code>8×64</code>。本页不证明通用公式，也不要求先读参数量、MAC、显存或梯度分析。</p>
+
+    <details>
+<summary><strong>2 分钟术语对齐</strong></summary>
+<div class="act-grid act-grid-3">
+  <div class="act-card">
+<strong>Q · query</strong><span>当前位置要查找什么；决定输出行数 <code>L_q</code>。</span>
+</div>
+  <div class="act-card">
+<strong>K · key</strong><span>每个可被检索位置的匹配键；长度 <code>L_k</code>。</span>
+</div>
+  <div class="act-card">
+<strong>V · value</strong><span>按注意力权重聚合的内容；长度与 K 对齐。</span>
+</div>
+</div>
+<p><code>attn_mask</code> 屏蔽 query-key 位置对；<code>key_padding_mask</code> 屏蔽 key 位置并对所有 query 生效。布尔 True 在本页固定接口中表示 masked/padding。</p>
+</details>
+
+    <p>学习产出固定为三件：一张四行 Q/K/V 来源表、一张六行 mask 实参表，以及从固定源码定位 <code>with_pos_embed</code>、三个 attention 调用点和两种不同 <code>[0]</code> 的能力。完整 token 组织沿用 <a href="/knowledge/imitation-learning/act/network/">Network</a>，架构意图沿用 <a href="/knowledge/imitation-learning/act/transformer/">Transformer</a>。</p>
+
+    <p><span id="mha-contract" class="act-sr-only">MHA 合同锚点</span></p>
+    <h2 id="seq-firstmha-">seq-first、MHA 与四个运行上下文</h2>
+
+    <p>固定实现没有覆盖 <code>batch_first</code>，因此按 PyTorch 2.0.0 默认使用 seq-first。固定 MHA 合同是 <code>d_model=512</code>、<code>nheads=8</code>、<code>d_head=64</code>、<code>batch_first=False</code>、<code>dropout=0.1</code>、<code>bias=True</code>、<code>add_bias_kv=False</code>；FFN 激活为 ReLU，宽度为 <code>512→3200→512</code>。8 heads 是同一序列的通道分头，不是 8 套独立输入。</p>
+
+    <div class="act-table" role="region" aria-label="四个Attention上下文的序列接口">
+<table>
+<caption>Seq-first 输入合同：第一维始终是序列长度</caption>
+<thead><tr>
+<th>上下文</th>
+<th>Q 长度</th>
+<th>K/V 长度</th>
+<th>输入布局</th>
+</tr></thead>
+<tbody>
+<tr>
+<th>CVAE encoder self</th>
+<td><code>H+2</code></td>
+<td><code>H+2</code></td>
+<td><code>[H+2,B,512]</code></td>
+</tr>
+<tr>
+<th>主 encoder self</th>
+<td><code>S=2+300K</code></td>
+<td><code>S</code></td>
+<td><code>[S,B,512]</code></td>
+</tr>
+<tr>
+<th>decoder self</th>
+<td><code>H</code></td>
+<td><code>H</code></td>
+<td><code>[H,B,512]</code></td>
+</tr>
+<tr>
+<th>decoder cross</th>
+<td><code>H</code></td>
+<td><code>S</code></td>
+<td>Q <code>[H,B,512]</code>；K/V <code>[S,B,512]</code>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+    <p><code>nn.MultiheadAttention</code> 返回二元组 <code>(attn_output, attn_output_weights)</code>。三个源码调用都用 <code>[0]</code> 取得 tuple 第一项并丢弃权重；这与 <code>DETRVAE.forward</code> 从 <code>[7,B,H,512]</code> decoder 层堆栈取 <code>hs[0]</code> 完全不同。前者不是第 0 个 head，后者也不是 tuple 解包。</p>
+
+    <p>PyTorch 2.0.0 默认 <code>need_weights=True</code>、<code>average_attn_weights=True</code>，理论返回的平均权重为 <code>[B,L_q,L_k]</code>；但调用者没有保存第二项，所以本站没有现成 attention 热图。未来逐头观察必须另行冻结软件版本、<code>average_attn_weights</code>、模式、随机性和样本，当前状态为 <code>NOT_RUN</code>。</p>
+
+    <p><span id="qkv-map" class="act-sr-only">QKV 总表锚点</span></p>
+    <h2 id="act--qkv-">ACT 的 Q/K/V 与位置编码总表</h2>
+
+    <figure class="act-path" role="img" aria-labelledby="qkv-flow-title qkv-flow-caption">
+  <p id="qkv-flow-title" class="act-path-title">四个上下文、四种位置来源、同一条“位置直接进 Q/K”边界</p>
+  <div class="act-route-map">
+    <div>
+<strong>CVAE self</strong><span>固定正弦 <code>pos_table</code>；Q/K 加位置，V 保留 encoder_input。</span>
+</div>
+    <div>
+<strong>Main self</strong><span>latent/proprio 两行可学习位置 + 视觉二维正弦位置；Q/K 加，V=src。</span>
+</div>
+    <div>
+<strong>Decoder self</strong><span>可学习 action <code>query_pos</code> 直接进入 Q/K；V=tgt。</span>
+</div>
+    <div>
+<strong>Decoder cross</strong><span>Q 加 query_pos；K 加 memory pos；V=memory。</span>
+</div>
+  </div>
+  <figcaption id="qkv-flow-caption">示意、非运行观测。<code>with_pos_embed(tensor,pos)</code> 只做 <code>tensor+pos</code> 或原样返回，不是独立可训练模块，也不是 ACT 新定义的注意力算子。</figcaption>
+</figure>
+
+    <div class="act-table" role="region" aria-label="ACT四个Attention上下文的QKV来源">
+<table>
+<caption>固定提交 Q/K/V 来源与实际 padding mask</caption>
+<thead><tr>
+<th>上下文</th>
+<th>Query</th>
+<th>Key</th>
+<th>Value</th>
+<th>位置来源</th>
+<th>有效 padding mask</th>
+</tr></thead>
+<tbody>
+<tr>
+<th>CVAE encoder self</th>
+<td><code>encoder_input+pos_table</code></td>
+<td>同 Q</td>
+<td><code>encoder_input</code></td>
+<td>固定正弦 pos_table</td>
+<td><code>[False,False,is_pad...]</code></td>
+</tr>
+<tr>
+<th>主 encoder self</th>
+<td><code>src+pos</code></td>
+<td>同 Q</td>
+<td><code>src</code></td>
+<td>两个特殊 token 可学习位置 + 视觉二维正弦</td>
+<td>无</td>
+</tr>
+<tr>
+<th>decoder self</th>
+<td><code>tgt+query_pos</code></td>
+<td>同 Q</td>
+<td><code>tgt</code></td>
+<td>可学习 action query</td>
+<td>无</td>
+</tr>
+<tr>
+<th>decoder cross</th>
+<td><code>tgt+query_pos</code></td>
+<td><code>memory+pos</code></td>
+<td><code>memory</code></td>
+<td>action query 对 memory 位置</td>
+<td>无</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+    <p>准确边界是：原始位置编码在本次 attention 调用中直接进入 Q/K 输入，不直接进入 V 输入。不能把它简化成“V 永远不含位置信息”，因为深层 src/tgt/memory 已受前层位置相关计算影响，位置还会经注意力权重间接影响加权结果。decoder 每层都重新接收同一 <code>query_pos</code> 与 <code>pos</code>，不是只在入口相加一次。</p>
+
+    <p><span id="encoder-attention" class="act-sr-only">Encoder Attention 锚点</span></p>
+    <h2 id="encoder--self-attention">两个 encoder 的 self-attention</h2>
+
+    <p>两种 encoder 都由 4 层 <code>TransformerEncoderLayer</code> 组成，但容器和参数独立，不共享权重。它们的目的、序列、位置和 mask 完全不同。</p>
+
+    <div class="act-table" role="region" aria-label="CVAE与主encoder比较">
+<table>
+<caption>同层类、不同序列合同</caption>
+<thead><tr>
+<th>维度</th>
+<th>CVAE posterior encoder</th>
+<th>主 encoder</th>
+</tr></thead>
+<tbody>
+<tr>
+<th>目的</th>
+<td>从 qpos 与目标 actions 推断 posterior</td>
+<td>融合 latent、proprio 与视觉 token</td>
+</tr>
+<tr>
+<th>序列</th>
+<td><code>[CLS,qpos,actions_0...actions_(H-1)]</code></td>
+<td><code>[latent,proprio,visual_0...visual_(300K-1)]</code></td>
+</tr>
+<tr>
+<th>长度</th>
+<td><code>H+2</code></td>
+<td><code>2+300K</code></td>
+</tr>
+<tr>
+<th>Q/K 位置</th>
+<td>固定 <code>pos_table</code>
+</td>
+<td>两个可学习位置 + 视觉二维正弦</td>
+</tr>
+<tr>
+<th>Key padding mask</th>
+<td>前两列 False，后接 <code>is_pad</code>
+</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<th>容器末尾 norm</th>
+<td>默认 <code>None</code>
+</td>
+<td>默认 <code>None</code>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+    <p>默认 post-norm 单层按七步前进：Q/K 加位置 → self-attention → attention 输出 dropout + residual → norm1 → <code>512→3200→512</code> FFN（内部含 dropout）→ FFN 输出 dropout + residual → norm2。单层不改变序列长度和 512 特征维。CVAE mask 只把 padding actions 屏蔽为 key；CLS 和 qpos 的前两列强制为 False。主 encoder 不继承该 mask。</p>
+
+    <p><span id="decoder-attention" class="act-sr-only">Decoder Attention 锚点</span></p>
+    <h2 id="decoder--self-attention--cross-attention">decoder 的 self-attention 与 cross-attention</h2>
+
+    <figure class="act-path" role="img" aria-labelledby="decoder-flow-title decoder-flow-caption">
+  <p id="decoder-flow-title" class="act-path-title">单层 decoder：先 query-query，再 query-memory</p>
+  <div class="act-route-map">
+    <div>
+<strong>1 · Self-attention</strong><span><code>(tgt+query_pos, tgt+query_pos, tgt)</code>；action-query 表示之间交互。</span>
+</div>
+    <div>
+<strong>2 · Residual + norm1</strong><span>attention 输出 dropout 后与 tgt 残差相加，再 LayerNorm。</span>
+</div>
+    <div>
+<strong>3 · Cross-attention</strong><span><code>(tgt+query_pos, memory+pos, memory)</code>；每个动作槽读取同一 memory。</span>
+</div>
+    <div>
+<strong>4 · Residual + norm2</strong><span>cross 输出经 dropout、残差与 LayerNorm。</span>
+</div>
+    <div>
+<strong>5 · FFN</strong><span><code>512→3200→512</code>，内部 dropout。</span>
+</div>
+    <div>
+<strong>6 · Residual + norm3</strong><span>得到本层输出；memory 保持只读并传给下一层。</span>
+</div>
+  </div>
+  <figcaption id="decoder-flow-caption">结构示意、非实测。七层各有独立 Q/K/V 投影；同一 memory 不等于复用跨层 K/V 投影，固定实现没有 KV cache。</figcaption>
+</figure>
+
+    <p>第一层的 <code>tgt</code> 全零。在 eval 且关闭 dropout 时，self-attention 的 V 沿 H 个 query 位置相同；每行 softmax 权重和为 1，因此该子层给各位置相同的共享输出。query_pos 的确定性位置分化主要在随后 cross-attention 读取 memory 时出现。训练模式下，attention-weight dropout 与残差 dropout 会破坏单次前向的逐位置精确相等，不能把 eval 推导无条件套到 train。</p>
+
+    <p>固定 decoder 输出堆栈为 <code>[7,B,H,512]</code>，<code>DETRVAE.forward</code> 使用 <code>hs[0]</code>，动作头只读取第 0 个 decoder layer。这里只陈述固定版本事实，不猜测设计意图；后六层的参数、任务梯度与算力后果由 <a href="/knowledge/imitation-learning/act/network-analysis/">Network Analysis</a> 核验。</p>
+
+    <p><span id="mask-trace" class="act-sr-only">Mask 追踪锚点</span></p>
+    <h2 id="mask-">六个 mask 形参与实际取值</h2>
+
+    <div class="act-table" role="region" aria-label="ACT六个mask形参的实际取值">
+<table>
+<caption>固定标准调用：唯一非 None 的 attention mask 实参是 CVAE key-padding mask</caption>
+<thead><tr>
+<th>形参</th>
+<th>主 encoder</th>
+<th>主 decoder</th>
+<th>CVAE encoder</th>
+</tr></thead>
+<tbody>
+<tr>
+<th>
+<code>src_mask</code> / encoder <code>mask</code>
+</th>
+<td><code>None</code></td>
+<td>不适用</td>
+<td><code>None</code></td>
+</tr>
+<tr>
+<th><code>src_key_padding_mask</code></th>
+<td><code>None</code></td>
+<td>不适用</td>
+<td><code>[False,False,is_pad...]</code></td>
+</tr>
+<tr>
+<th><code>tgt_mask</code></th>
+<td>不适用</td>
+<td><code>None</code></td>
+<td>不适用</td>
+</tr>
+<tr>
+<th><code>memory_mask</code></th>
+<td>不适用</td>
+<td><code>None</code></td>
+<td>不适用</td>
+</tr>
+<tr>
+<th><code>tgt_key_padding_mask</code></th>
+<td>不适用</td>
+<td><code>None</code></td>
+<td>不适用</td>
+</tr>
+<tr>
+<th><code>memory_key_padding_mask</code></th>
+<td>不适用</td>
+<td><code>None</code></td>
+<td>不适用</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+    <p><code>attn_mask</code> 按 query-key 位置对屏蔽，<code>key_padding_mask</code> 按 key 位置屏蔽并对所有 query 生效；布尔 <code>True=masked/padding</code>。decoder 四个 mask 都是 None，尤其没有 <code>tgt_mask</code>，所以 H 个 action query 之间没有方向性或 causal mask，支持并行解码。</p>
+
+    <p>“并行解码”不等于动作位置统计独立：decoder self-attention 本来允许 query-query 交互；固定提交又只把 <code>hs[0]</code> 送入动作头，必须与完整多层 decoder 的一般能力分开讨论。</p>
+
+    <p><span id="norm-dropout" class="act-sr-only">Norm Dropout 锚点</span></p>
+    <h2 id="post-normdropout-">post-norm、dropout 与固定版本边界</h2>
+
+    <p>官方默认命令不启用 <code>--pre_norm</code>，所以三个 Transformer 容器走 post-norm；源码仍支持显式 pre-norm。两种残差顺序是：<code>post-norm: x ← LN(x + Dropout(f(x)))</code>；<code>pre-norm: x ← x + Dropout(f(LN(x)))</code>。本页不判断哪一种普遍更优，也不把小学习率与 post-norm 建立未经消融的因果关系。</p>
+
+    <div class="act-grid act-grid-3">
+  <div class="act-card">
+<strong>容器末尾 norm</strong><span>主 encoder 与 CVAE encoder 的容器末尾 norm 默认 <code>None</code>；主 decoder 有共享 <code>decoder_norm</code>，并作用于返回的中间层输出。</span>
+</div>
+  <div class="act-card">
+<strong>三类 dropout 位置</strong><span>MHA 内部 dropout 作用于 softmax 后的 attention weights；<code>dropout1/2/3</code> 位于子层输出到残差相加之间；FFN 内另有一次 dropout。</span>
+</div>
+  <div class="act-card">
+<strong>初始化边界</strong><span>主 Transformer 在 clone 后执行 <code>_reset_parameters</code>；CVAE encoder 不经过这次重置。这里只记实现差异，不推断性能或作者动机。</span>
+</div>
+</div>
+
+    <p>dropout 的“数量”只有先定义口径才有意义：MHA 权重 dropout、残差支路 dropout 与 FFN 内 dropout 不是同一个位置。PyTorch、ACT 和 DETR 的初始化细节也必须锁定版本；逐层参数独立性与训练后分化归 Network Analysis。</p>
+
+    <p><span id="code-debugging" class="act-sr-only">代码调试锚点</span></p>
+    <h2 id="section">代码映射、调试观察与下一步</h2>
+
+    <div class="act-table" role="region" aria-label="Attention代码映射与静态期望">
+<table>
+<caption>问题 → 稳定符号 → 静态期望 → 常见误判</caption>
+<thead><tr>
+<th>问题</th>
+<th>固定符号</th>
+<th>静态期望</th>
+<th>常见误判</th>
+</tr></thead>
+<tbody>
+<tr>
+<th>Q/K 为什么含位置</th>
+<td><code>with_pos_embed</code></td>
+<td>三处调用的 Q/K 显式相加</td>
+<td>误写成 V 也直接加原始 pos</td>
+</tr>
+<tr>
+<th>主 encoder 是否有 mask</th>
+<td><code>Transformer.forward</code></td>
+<td>
+<code>mask=None</code> 传给 encoder/decoder</td>
+<td>把 CVAE is_pad 迁移过来</td>
+</tr>
+<tr>
+<th>action query 是否因果</th>
+<td><code>TransformerDecoder.forward</code></td>
+<td><code>tgt_mask=None</code></td>
+<td>按 NLP 惯例脑补三角 mask</td>
+</tr>
+<tr>
+<th>MHA <code>[0]</code> 是什么</th>
+<td><code>self_attn(...)[0]</code></td>
+<td>tuple 的 attn_output</td>
+<td>误写成第 0 个 head</td>
+</tr>
+<tr>
+<th>模型 <code>[0]</code> 是什么</th>
+<td><code>self.transformer(...)[0]</code></td>
+<td>第 0 个中间 decoder layer</td>
+<td>误写成 tuple 解包</td>
+</tr>
+<tr>
+<th>权重能否直接画</th>
+<td>
+<code>need_weights=True</code> 默认</td>
+<td>第二项被调用者丢弃</td>
+<td>宣称已有 attention 热图</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+    <p>静态错误清单至少包含十二类：batch-first/seq-first 混淆；MHA tuple <code>[0]</code> 混淆；decoder 层轴 <code>[0]</code> 混淆；mask True 语义反转；脑补 causal mask；把位置直接加到 V；把深层 V 称为纯内容；train/eval 推导混用；把四个上下文称四套实现；把头数当参数量倍数；把未保存权重称作热图证据；忽略 PyTorch 版本漂移。</p>
+
+    <p>未来动态观察必须登记固定 commit、PyTorch 版本、train/eval 模式、随机 seed、B/K/H、hook 路径、预期 shape、容差与输出去向，统一标为 <code>NOT_RUN</code>。当前只做静态追踪，没有 import/实例化 ACT 模型、注册 hook 或生成 attention 热图。</p>
+
+    <h3 id="reproduction-">页面所有权与 Reproduction 交接</h3>
+
+    <p><a href="/knowledge/imitation-learning/act/transformer/">Transformer</a> 持有架构意图，<a href="/knowledge/imitation-learning/act/network/">Network</a> 持有模块和端到端 shape，本页持有 Q/K/V、mask、位置、norm/dropout，<a href="/knowledge/imitation-learning/act/network-analysis/">Network Analysis</a> 持有参数/MAC/名义显存/梯度/初始化账本，<a href="/knowledge/imitation-learning/act/reproduction/">Reproduction</a> 持有环境、数据、配置与离线门禁。</p>
+
+    <p>Reproduction 接收七项固定 payload：seq-first 接口；固定 commit 与 PyTorch 2.0.0 版本边界；默认 post-norm；<code>tgt_mask=None</code>；CVAE <code>is_pad</code> mask；两种 <code>[0]</code> 语义；未来 hook 验证的 <code>NOT_RUN</code> 状态。本页不执行这些验证。</p>
+
+    <h3 id="section-1">实际参考网页</h3>
+
+    <ol>
+      <li>
+<a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/models/transformer.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：transformer.py</a>：三处 attention 调用、位置注入、mask 转发、norm/dropout 与容器返回。</li>
+      <li>
+<a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/models/detr_vae.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：detr_vae.py</a>：两类 encoder 输入、decoder 调用、<code>hs[0]</code> 与动作头。</li>
+      <li>
+<a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/policy.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：policy.py</a>：policy 输入与 train/deploy 分支边界。</li>
+      <li>
+<a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/detr/main.py" rel="external nofollow noopener" target="_blank">ACT 固定提交：main.py</a>：<code>--pre_norm</code> 开关。</li>
+      <li>
+<a href="https://github.com/tonyzhaozh/act/blob/742c753c0d4a5d87076c8f69e5628c79a8cc5488/conda_env.yaml" rel="external nofollow noopener" target="_blank">ACT 固定环境：conda_env.yaml</a>：PyTorch 2.0.0 版本口径。</li>
+      <li>
+<a href="https://pytorch.org/docs/2.0/generated/torch.nn.MultiheadAttention.html" rel="external nofollow noopener" target="_blank">PyTorch 2.0 MultiheadAttention</a>：输入布局、返回值、mask 与 dropout API。</li>
+      <li>
+<a href="https://github.com/pytorch/pytorch/blob/v2.0.0/torch/nn/modules/activation.py" rel="external nofollow noopener" target="_blank">PyTorch v2.0.0 activation.py</a> 与 <a href="https://github.com/pytorch/pytorch/blob/v2.0.0/torch/nn/functional.py" rel="external nofollow noopener" target="_blank">functional.py</a>：固定版本实现细节。</li>
+      <li>
+<a href="https://github.com/facebookresearch/detr/blob/29901c51d7fe8712168b8d0d64351170bc0f83e0/models/transformer.py" rel="external nofollow noopener" target="_blank">DETR 固定提交：transformer.py</a>：继承实现边界与对照。</li>
+      <li>
+<a href="https://arxiv.org/abs/2304.13705v1" rel="external nofollow noopener" target="_blank">ACT arXiv v1</a> 与 <a href="https://tonyzhaozh.github.io/aloha/aloha.pdf" rel="external nofollow noopener" target="_blank">ALOHA 最终论文</a>：H=100/H=90、层数和模型配置口径。</li>
+    </ol>
+
+    <div class="act-callout" data-kind="warning">
+      <p><strong>禁止外推：</strong>原始位置编码没有直接写入本次 V 输入，但深层 V 不是“永远纯内容”；主 encoder 不继承 CVAE mask；decoder 没有 causal mask，却不代表动作位置统计独立；四个上下文不是四套实现；两种 <code>[0]</code> 不同；eval 的第一层等值推导不能无条件套到 train；本站没有已保存 attention weights 或热图证据。&lt;/div&gt;</p>
+
+      <div class="act-actions act-footer">
+<a href="/knowledge/imitation-learning/act/network/">前驱 A：Network</a><a href="/knowledge/imitation-learning/act/network-analysis/">前驱 B：Network Analysis（可选分支合流）</a><a href="/knowledge/imitation-learning/act/">返回：ACT Overview</a><a href="/knowledge/imitation-learning/act/transformer/">相关：Transformer</a><a href="/knowledge/foundations/attention/">相关：通用 Attention</a><a href="/knowledge/foundations/positional-encoding/">相关：位置编码</a><a class="primary" href="/knowledge/imitation-learning/act/reproduction/">下一页：Reproduction</a>
+</div>
+    </div>
+  </div>
+</div>
+
+  </article>
+
+  
+
+  
+    
+
+
+  
+</div>
+</div>
+          </div>
+        
+      
+    </div>
+
+    <!-- Footer -->
+    
+
+
+  <footer class="fixed-bottom" role="contentinfo">
+    <div class="container mt-0">
+      
+  © Copyright 2026
+  DDS
+  
+  . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>.
+
+  
+  
+
+    </div>
+  </footer>
+
+
+
+    <!-- JavaScripts -->
+    <script>
   window.alFolio = {
     compatBootstrap: false
   };
-</script> <script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script> <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script> <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script> <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.7.0/dist/mermaid.min.js" integrity="sha256-TtLOdUA8mstPoO6sGvHIGx2ceXrrX4KgIItO06XOn8A=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js" integrity="sha256-1rA678n2xEx7x4cTZ5x4wpUCj6kUMZEZ5cxLSVSFWxw=" crossorigin="anonymous"></script> <script defer src="/assets/al_charts/js/mermaid-setup.js" type="text/javascript"></script> <script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script> <script src="/assets/al_math/js/mathjax-setup.js"></script> <script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script> <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script> <script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script> <script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script> <script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script> <script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script> <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script> <script async src="https://badge.dimensions.ai/badge.js"></script> <script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script> <script defer src="/assets/al_img_tools/js/zoom.js"></script> <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script> <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script> <script>
+</script>
+
+<!-- Core navigation/runtime scripts -->
+<script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script>
+
+
+
+  <!-- Masonry & imagesLoaded -->
+  <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script>
+  <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script>
+
+
+
+  <!-- Charts and Diagrams -->
+  
+
+
+
+
+
+
+
+  <!-- Math and Tikzjax -->
+  
+<script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script>
+<script src="/assets/al_math/js/mathjax-setup.js"></script>
+
+
+
+
+
+<!-- Tooltips & popovers runtime -->
+<script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script>
+
+
+
+
+
+  <!-- Tocbot -->
+  <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script>
+
+
+<!-- Load Common JS -->
+<script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script>
+<script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script>
+<script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script>
+
+<!-- Jupyter Open External Links New Tab -->
+<script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script>
+
+<!-- Badges -->
+
+  <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
+
+
+  <script async src="https://badge.dimensions.ai/badge.js"></script>
+
+
+
+
+  <!-- Analytics -->
+  
+
+
+
+
+
+  <!-- Image Features -->
+  
+<!-- Medium Zoom JS -->
+<script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script>
+<script defer src="/assets/al_img_tools/js/zoom.js"></script>
+
+
+
+
+
+  <!-- Scrolling Progress Bar -->
+  <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script>
+
+
+
+
+
+  <!-- Back to Top -->
+  
+  
+  
+    <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script>
+  
+  <script>
     addBackToTop();
-  </script> <script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script> <ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys> <script src="/assets/al_search/js/search-setup.js"></script> <script>
+  </script>
+
+
+
+  <!-- Search -->
+  
+    
+<script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script>
+<ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys>
+<script src="/assets/al_search/js/search-setup.js"></script>
+<script>
 // get the ninja-keys element
 const ninja = document.querySelector('ninja-keys');
 
@@ -833,7 +3272,7 @@ ninja.data = [{
         title: 'email',
         section: 'Socials',
         handler: () => {
-          window.open("mailto:%79%6F%75@%65%78%61%6D%70%6C%65.%63%6F%6D", "_blank");
+          window.open("#", "_blank");
         },
       },{
         id: 'social-inspire',
@@ -891,4 +3330,14 @@ ninja.data = [{
       },
     },];
 
-</script> <script src="/assets/al_search/js/shortcut-key.js"></script> </body> </html>
+</script>
+<script src="/assets/al_search/js/shortcut-key.js"></script>
+
+
+  
+
+
+
+
+  </body>
+</html>

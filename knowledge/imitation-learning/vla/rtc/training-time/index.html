@@ -1,10 +1,1166 @@
-<!DOCTYPE html> <html lang="zh-CN"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <title> RTC · Training-Time Action Conditioning 与后缀 Loss | DDS </title> <meta name="author" content="DDS "> <meta name="description" content="逐步构造 Training-Time RTC 训练样本，解释干净动作前缀、逐 Token Flow 时间、后缀 Masked Loss、延迟采样、优化器边界与 trained 推理"> <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作"> <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;"> <style>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <!-- Head -->
+  <head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <!-- Metadata, OpenGraph and Schema.org -->
+
+
+
+
+<!-- Standard metadata -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>
+  
+  
+    
+      RTC · Training-Time Action Conditioning 与后缀 Loss | DDS 
+    
+  
+</title>
+<meta name="author" content="DDS ">
+<meta name="description" content="解释 Training-Time RTC 如何模拟 delay、构造干净 prefix 与带噪 postfix、冻结逐 Token 时间和后缀 Loss，并用 capability manifest 把 trained proposal 安全交给 Runtime。">
+
+  <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作">
+
+
+
+
+
+
+
+
+
+
+<!-- Security: Content Security Policy -->
+<!-- Permissive CSP suitable for academic websites. Allows external images, videos, and common embed services. -->
+<!-- To customize for your needs, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;">
+<style>
   :root {
     --max-content-width: 930px;
   }
-</style> <link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous"> <link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap"> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light"> <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;"> <link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711"> <link rel="canonical" href="https://dds131.github.io/knowledge/imitation-learning/vla/rtc/training-time/"> <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark"> <script>
+</style>
+
+<!-- Tailwind-first core styles -->
+<link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62">
+
+
+
+
+
+
+  <!-- Tocbot -->
+  <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous">
+
+
+<!-- Icons -->
+
+  
+<!-- Font Awesome -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous">
+
+<!-- Academicons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous">
+
+<!-- Scholar Icons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous">
+
+
+
+<link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap">
+
+<!-- Code Syntax Highlighting -->
+<link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light">
+
+<!-- Styles -->
+
+
+
+
+  <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+
+<link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711">
+
+<link rel="canonical" href="https://dds131.github.io/knowledge/imitation-learning/vla/rtc/training-time/">
+
+
+  <!-- Dark Mode -->
+  <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script>
+  <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark">
+  <script>
     initTheme();
-  </script> </head> <body class="fixed-top-nav "> <header> <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation"> <div class="container"> <a class="navbar-brand title font-weight-lighter" href="/"> <span class="font-weight-bold">DDS</span> </a> <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar top-bar"></span> <span class="icon-bar middle-bar"></span> <span class="icon-bar bottom-bar"></span> </button> <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav"> <ul class="navbar-nav navbar-menu-list flex-nowrap"> <li class="nav-item "> <a class="nav-link" href="/">关于 </a> </li> <li class="nav-item "> <a class="nav-link" href="/blog/">blog </a> </li> <li class="nav-item "> <a class="nav-link" href="/publications/">publications </a> </li> <li class="nav-item "> <a class="nav-link" href="/projects/">projects </a> </li> <li class="nav-item "> <a class="nav-link" href="/repositories/">repositories </a> </li> <li class="nav-item "> <a class="nav-link" href="/cv/">CV </a> </li> <li class="nav-item "> <a class="nav-link" href="/teaching/">teaching </a> </li> <li class="nav-item "> <a class="nav-link" href="/people/">people </a> </li> <li class="nav-item dropdown "> <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus </a> <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown"> <a class="dropdown-item " href="/books/">bookshelf</a> <div class="dropdown-divider"></div> <a class="dropdown-item " href="/blog/">blog</a> </div> </li> <li class="nav-item active"> <a class="nav-link" href="/knowledge/">knowledge <span class="sr-only">(current)</span> </a> </li> <li class="nav-item"> <button id="search-toggle" type="button" title="Search" aria-label="Open search"> <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span> </button> </li> <li class="toggle-container"> <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme"> <i class="fa-half-sun-moon" id="light-toggle-system"></i> <i class="fa-solid fa-moon" id="light-toggle-dark"></i> <i class="fa-solid fa-sun" id="light-toggle-light"></i> </button> </li> </ul> </div> </div> </nav> <progress id="progress" value="0"> <div class="progress-container"> <span class="progress-bar"></span> </div> </progress> </header> <div class="container mt-5" role="main"> <div class="row"> <div class="col-sm-3"> <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="2"></nav> </div> <div class="col-sm-9"> <div class="post"> <header class="post-header"> <h1 class="post-title">RTC · Training-Time Action Conditioning 与后缀 Loss</h1> <p class="post-description">逐步构造 Training-Time RTC 训练样本，解释干净动作前缀、逐 Token Flow 时间、后缀 Masked Loss、延迟采样、优化器边界与 trained 推理</p> </header> <article> <style>
+  </script>
+
+
+
+
+
+
+
+  <!-- Image Features -->
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+  </head>
+
+  <!-- Body -->
+  <body class="fixed-top-nav ">
+    <!-- Header -->
+    <header>
+  <!-- Nav Bar -->
+  <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation">
+    <div class="container">
+      
+        <a class="navbar-brand title font-weight-lighter" href="/">
+          
+            
+              <span class="font-weight-bold">DDS</span>
+            
+            
+            
+          
+        </a>
+      
+      <!-- Navbar Toggle -->
+      <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar top-bar"></span>
+        <span class="icon-bar middle-bar"></span>
+        <span class="icon-bar bottom-bar"></span>
+      </button>
+
+      <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav">
+        <ul class="navbar-nav navbar-menu-list flex-nowrap">
+          
+
+          <!-- About -->
+          <li class="nav-item ">
+            <a class="nav-link" href="/">关于
+              
+            </a>
+          </li>
+
+          <!-- Other pages -->
+          
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/blog/">blog
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/publications/">publications
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/projects/">projects
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/repositories/">repositories
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/cv/">CV
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/teaching/">teaching
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/people/">people
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                
+                <li class="nav-item dropdown ">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus
+                    
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown">
+                    
+                      
+                        <a class="dropdown-item " href="/books/">bookshelf</a>
+                      
+                    
+                      
+                        <div class="dropdown-divider"></div>
+                      
+                    
+                      
+                        <a class="dropdown-item " href="/blog/">blog</a>
+                      
+                    
+                  </div>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item active">
+                  <a class="nav-link" href="/knowledge/">knowledge
+                    
+                      <span class="sr-only">(current)</span>
+                    
+                  </a>
+                </li>
+              
+            
+          
+          
+            <!-- Search -->
+            <li class="nav-item">
+              <button id="search-toggle" type="button" title="Search" aria-label="Open search">
+                <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span>
+              </button>
+            </li>
+          
+          
+            <!-- Toogle theme mode -->
+            <li class="toggle-container">
+              <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme">
+                <i class="fa-half-sun-moon" id="light-toggle-system"></i>
+                <i class="fa-solid fa-moon" id="light-toggle-dark"></i>
+                <i class="fa-solid fa-sun" id="light-toggle-light"></i>
+              </button>
+            </li>
+          
+        </ul>
+      </div>
+    </div>
+  </nav>
+  
+    <!-- Scrolling Progress Bar -->
+    <progress id="progress" value="0">
+      <div class="progress-container">
+        <span class="progress-bar"></span>
+      </div>
+    </progress>
+  
+</header>
+
+
+    <!-- Content -->
+    <div class="container mt-5" role="main">
+      
+        
+        
+        
+          <div class="row">
+            <!-- sidebar, which will move to the top on a small screen -->
+            <div class="col-sm-3">
+              <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="3"></nav>
+            </div>
+            <!-- main content area -->
+            <div class="col-sm-9">
+
+<div class="post">
+  <header class="post-header">
+    <h1 class="post-title">RTC · Training-Time Action Conditioning 与后缀 Loss</h1>
+    <p class="post-description">解释 Training-Time RTC 如何模拟 delay、构造干净 prefix 与带噪 postfix、冻结逐 Token 时间和后缀 Loss，并用 capability manifest 把 trained proposal 安全交给 Runtime。</p>
+  </header>
+
+  <article>
+    <style>
   /* ---- 左侧栏容器：整体 sticky，内部两块各自独立滚动 ----------------------
    主题自带的 #toc-sidebar 本来带 .sticky-top，两个 sticky 兄弟元素会互相遮挡，
    所以由 JS 摘掉它的 .sticky-top，改为由本容器统一 sticky。 */
@@ -165,7 +1321,845 @@
       max-height: 40vh;
     }
   }
-</style> <div id="note-side"> <details id="note-tree" open=""> <summary>知识库目录</summary> <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp"> <summary> ⓪ 深度学习基础<span class="n">2</span> </summary> <ul> <li> <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a> </li> <li> <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a> </li> <li> <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a> </li> </ul> </details><details class="note-tree-grp" open=""> <summary> ① 模仿学习与 VLA<span class="n">146</span> </summary> <ul> <li> <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a> </li> <li> <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul> <li> <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a> </li> <li> <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a> </li> <li> <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z（含 AE 与 VAE）">CVAE 与隐变量</a> </li> <li> <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a> </li> <li> <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling">时间集成</a> </li> <li> <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练目标与超参">训练目标与超参</a> </li> <li> <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与局限">实验消融与局限</a> </li> <li> <a href="/knowledge/imitation-learning/act/network/" title="ACT · 网络模型逐模块拆解">网络模型拆解</a> </li> <li> <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Transformer 层内实现">Transformer 层内</a> </li> <li> <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 能力边界与证据分层">能力边界与证据分层</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向约定与推理期现象">时间方向与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界泛化与数据配方">开放世界与数据配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI 源码剖析">OpenPI 源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现的差异及推理期现象">论文与实现的差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 分布式价值函数">分布式价值函数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · 演进对比与开源复现现状">演进对比与开源复现现状</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 源码映射与工程复现路线">源码映射与工程复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练流程、Loss 与公开边界">数据训练与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss" class="cur">Training-Time RTC</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/" title="HG-DAgger：Human-Gated DAgger">HG-DAgger</a><ul> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/foundations/" title="HG-DAgger · 从 BC 到人工门控数据聚合">问题与方法谱系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/intervention/" title="HG-DAgger · 人工门控、接管与恢复轨迹">人工门控与恢复轨迹</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/risk/" title="HG-DAgger · Ensemble Doubt 与风险阈值">Doubt 与风险阈值</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/vla-pipeline/" title="HG-DAgger · VLA 数据、Loss 与迭代部署">VLA 数据与训练</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 token 组织">网络架构与 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示、损失与「论文 ≠ 实现」">动作表示与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与迁移到自己的机械臂">推理部署与迁移</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作、深层 DiT 与多本体基础模型">GR00T N1.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 AlternateVLDiT">架构增量与图文分流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作、统计量与训练数据">相对动作与数据</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、时间方向与 Loss">Flow Matching 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 训练流程、优化配置与迭代策略">训练、优化与迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 四步推理、RTC 与异常排查">推理与异常排查</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与涌现现象">推理与涌现现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a> </li> </ul> </li> </ul> </li> </ul> </details><details class="note-tree-grp"> <summary> ② 强化学习<span class="n">88</span> </summary> <ul> <li> <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a> </li> <li class="part">第一部分 · 基础</li> <li> <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a> </li> <li> <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a> </li> <li> <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a> </li> <li> <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a> </li> <li> <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a> </li> <li class="part">第二部分 · 进阶</li> <li> <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul> <li> <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul> <li> <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul> <li> <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a> </li> <li class="part">第三部分 · 前沿</li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul> <li> <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a> </li> <li> <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a> </li> <li> <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a> </li> <li> <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a> </li> <li> <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a> </li> </ul> </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details> </div> <script>
+</style>
+
+<div id="note-side">
+  <details id="note-tree" open="">
+    <summary>知识库目录</summary>
+    <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp">
+          <summary>
+            ⓪ 深度学习基础<span class="n">2</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a>
+            </li>
+<li>
+                <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a>
+</li>
+<li>
+                <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a>
+</li>
+</ul>
+        </details><details class="note-tree-grp" open="">
+          <summary>
+            ① 模仿学习与 VLA<span class="n">167</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a>
+            </li>
+<li>
+                <a href="/knowledge/imitation-learning/behavior-cloning/" title="Behavior Cloning：监督目标、分布漂移与失效诊断">Behavior Cloning</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/dagger/" title="DAgger：数据聚合、策略诱导分布与在线模仿">DAgger</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/hg-dagger/" title="HG-DAgger：人工门控的数据聚合">HG-DAgger</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/foundations/" title="HG-DAgger Foundations：人工门控、允许集与恢复数据">Foundations</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/intervention/" title="HG-DAgger Intervention：人类干预与控制权状态机">Intervention</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/risk/" title="HG-DAgger Risk：风险信号、阈值与失效处理">Risk</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/vla-pipeline/" title="HG-DAgger VLA Pipeline：从干预数据到受控发布">VLA Pipeline</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z">CVAE 与隐变量</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练流程、损失与验证">训练流程、损失与验证</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling 时间集成">时间集成</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与证据边界">实验、消融与证据边界</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 局限、证据边界与后续选型">局限与后续选型</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码导读与调用链">官方源码与调用链</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network/" title="ACT Network · 模块、张量接口与数据流">Network模块与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network-analysis/" title="ACT Network Analysis · 形状、参数、算量与梯度">Network Analysis</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Attention 内部机制">Attention内部机制</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/reproduction/" title="ACT · 复现指南与工程验收">复现指南与工程验收</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/generative-action-models/" title="生成式动作模型：Regression、CVAE、Diffusion 与 Flow Matching">生成式动作模型</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/foundations/" title="VLA 公共基础：从观测到安全执行">公共基础</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/robotics-control/" title="VLA 公共基础 · 机器人学、坐标系与控制接口">机器人学与控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/vlm-grounding/" title="VLA 公共基础 · VLM 骨干、具身与空间 Grounding">VLM 与 Grounding</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/action-representations/" title="VLA 公共基础 · 动作空间、Token、Diffusion 与 Flow">动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/data-cross-embodiment/" title="VLA 公共基础 · 数据工程、Co-training 与跨本体">数据与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/model-lineage/" title="VLA 公共基础 · 奠基模型与创新谱系">模型谱系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/training-adaptation/" title="VLA 公共基础 · 预训练、Co-training、微调与持续适配">训练与适配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/long-horizon/" title="VLA 公共基础 · 长时序规划、记忆与世界模型">长时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/evaluation-benchmarks/" title="VLA 公共基础 · 统一评测、Benchmark 与失败分类">统一评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/realtime-deployment/" title="VLA 公共基础 · 实时部署、效率与机器人系统接口">实时部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/safety-reliability/" title="VLA 公共基础 · 安全、可靠性与人在回路">安全可靠性</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向、论文版本与推理期现象">时间方向与论文版本</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码地图、调用链与复现审计">官方源码与复现审计</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界数据、评测与消融">开放世界数据与评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现差异">论文与实现差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI源码剖析">OpenPI源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · π0到π0.6演进与开源复现">演进与开源复现边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 回报分布价值函数">回报分布价值函数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 实现接口与静态复现门禁">实现接口与静态复现门禁</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练目标与公开边界">数据、训练目标与公开边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss" class="cur">Training-Time RTC</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/experiments/" title="OpenVLA · 实验与基准">实验与基准</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 Token 组织">网络架构与 Token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示与损失">动作表示与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与机械臂迁移">推理部署与迁移</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码逐文件剖析">官方源码逐文件剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/inference-deployment/" title="GR00T N1 · 推理部署与动作块消费">推理部署与动作块</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作与 32 层 DiT">GR00T N1.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 32 层 AlternateVLDiT">架构与 32 层 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作与数据契约概览">动作与数据契约</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action/" title="GR00T N1.6 · 相对动作表示">相对动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/data-statistics/" title="GR00T N1.6 · 数据与统计量">数据与统计量</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、Masked MSE 与时间方向">Flow 与 Masked MSE</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 预训练、后训练与参数更新">预训练与后训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 推理闭环与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/perception-tracking/" title="DexGraspVLA · 目标感知与跟踪">目标感知与跟踪</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与行为机制">推理闭环与行为机制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析与实现边界">官方源码与实现边界</a>
+                              </li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </details><details class="note-tree-grp">
+          <summary>
+            ② 强化学习<span class="n">88</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a>
+            </li>
+<li class="part">第一部分 · 基础</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a>
+</li>
+<li class="part">第二部分 · 进阶</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a>
+</li>
+<li class="part">第三部分 · 前沿</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a>
+</li>
+</ul>
+        </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details>
+</div>
+
+<script>
   // 渐进增强：把目录树搬到左侧栏，并把主题自带的本页目录收进同一个 sticky 容器。
   // 没有 JS 时树仍在正文顶部，可见可点，只是不在左侧。
   (function () {
@@ -201,31 +2195,871 @@
       tree.open = false;
     }
   })();
-</script> <style>
-.rtc-nav{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1.2rem 0 2rem;padding:.72rem 1rem;border:1px solid var(--global-divider-color,#e3e3e3);border-radius:9px;font-size:.86rem}.rtc-nav .sep{opacity:.35}.rtc-nav .cur{opacity:.68}
-.rtc-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:.85rem;margin:1.5rem 0}.rtc-kpi>div{border-left:3px solid var(--global-theme-color,#b509ac);padding:.32rem .78rem}.rtc-kpi b{display:block;font-size:1.1rem}.rtc-kpi span{font-size:.77rem;opacity:.72}
-.rtc-callout,.rtc-key,.rtc-warn{margin:1.15rem 0;padding:.35rem 0 .35rem .9rem;font-size:.9rem;line-height:1.7}.rtc-callout{border-left:3px solid var(--global-divider-color,#d0d0d0)}.rtc-key{border-left:3px solid var(--global-theme-color,#b509ac)}.rtc-warn{border-left:3px solid #c57a00}
-.rtc-tbl{overflow-x:auto;margin:1rem 0 1.4rem}.rtc-tbl table{min-width:760px}
-.rtc-fig{margin:1.45rem 0 1.8rem}.rtc-fig svg{display:block;width:100%;max-width:920px;height:auto;margin:0 auto}.rtc-fig figcaption{max-width:900px;margin:.65rem auto 0;font-size:.8rem;line-height:1.65;opacity:.76}
-.rtc-code{margin:1.1rem 0;padding:.9rem 1rem;border:1px solid var(--global-divider-color,#ddd);border-radius:9px;background:color-mix(in srgb,var(--global-bg-color,#fff) 95%,var(--global-theme-color,#b509ac) 5%);overflow-x:auto}.rtc-code pre{margin:0;font-size:.82rem;line-height:1.65;white-space:pre-wrap}
-.rtc-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1.2rem 0}.rtc-grid>div{border:1px solid var(--global-divider-color,#ddd);border-radius:9px;padding:.85rem 1rem;font-size:.86rem;line-height:1.65}.rtc-grid h3{font-size:.96rem;margin:.05rem 0 .45rem}
-@media(max-width:720px){.rtc-grid{grid-template-columns:1fr}.rtc-tbl table{min-width:650px}}
-</style> <div class="rtc-nav"> <a href="/knowledge/imitation-learning/vla/rtc/">RTC</a><span class="sep">/</span> <a href="/knowledge/imitation-learning/vla/rtc/runtime/">③ 异步执行</a><span class="sep">/</span> <span class="cur">④ Training-Time RTC</span> </div> <p>原始 RTC 可以给已经训练好的兼容 Flow Policy 增加推理时引导，但每个 Flow 积分步都要额外计算 VJP。Training-Time RTC 将“已有动作前缀”变成训练条件：训练时随机模拟推理延迟，给模型一段已经承诺的干净动作，让它学习只生成剩余后缀。</p> <p>这条路线把最昂贵的额外计算从在线采样移到训练分布设计中。它消除了 RTC 的在线 VJP，而不是声称整个推理系统没有任何调度、掩码或张量操作开销。它不是新增第二个 RTC 网络，也不是对任意旧 checkpoint 打开的免训练开关。</p> <div class="rtc-kpi"> <div> <b>干净前缀</b><span>推理期间已经承诺的动作</span> </div> <div> <b>逐 Token 时间</b><span>前缀在数据端，后缀在 Flow 路径</span> </div> <div> <b>后缀 Loss</b><span>前缀作为条件，不参与误差平均</span> </div> <div> <b>无需 VJP</b><span>在线采样直接调用训练后的速度场</span> </div> </div> <div class="rtc-key"> <p><strong>时间约定</strong>：本页采用 \(\tau=0\) 为噪声端、\(\tau=1\) 为动作端，与公开 Kinetix 实现一致。若移植到反向时间实现，路径、速度目标、前缀时间与 Euler 更新方向必须一起转换。</p> </div> <hr> <h2 id="一为什么把动作条件移到训练期">一、为什么把动作条件移到训练期</h2> <p>原始 guided RTC 在当前 Flow 状态上估计最终动作，再通过 VJP 把旧块一致性误差传回速度修正。它的优势是能复用已有兼容模型；代价是在线求导增加推理开销，也引入最大引导权重等超参数。</p> <p>Training-Time RTC 的目标有三项：</p> <ol> <li>让推理期不再需要 VJP；</li> <li>让“干净动作前缀 + 待生成后缀”成为模型见过的训练分布；</li> <li>在更长推理延迟下，仍直接生成与已承诺动作相容的后缀。</li> </ol> <p>代价也很明确：需要从头训练或微调得到兼容 checkpoint；基础网络还必须能够接收<strong>每个动作 Token 各自的 Flow 时间条件</strong>。所谓不增加新架构，不能理解为任何仅接受单一 batch 时间标量的实现都无需改接口。</p> <hr> <h2 id="二训练样本怎样构造">二、训练样本怎样构造</h2> <p>给定真实动作块</p> \[A=[a_0,a_1,\ldots,a_{H-1}],\] <p>采样同形状噪声 \(\epsilon\)、全局 Flow 时间 \(\tau\)，以及模拟推理延迟 \(d\)。运行时旧块与新块只有 \(H-s\) 个重叠位置，所以有效前缀还必须满足</p> \[0\le d\le H-s.\] <p>对第 \(i\) 个动作位置定义逐 Token 时间</p> \[\tau_i= \begin{cases} 1, &amp; i&lt;d,\\ \tau, &amp; i\ge d. \end{cases}\] <p>再构造</p> \[x_i=(1-\tau_i)\epsilon_i+\tau_i a_i.\] <p>因此 \(i&lt;d\) 时有 \(x_i=a_i\)，即完全干净的动作前缀；其余位置仍是普通 Flow 训练中的带噪状态。</p> <figure class="rtc-fig"> <svg viewbox="0 0 920 290" role="img" aria-label="Training-Time RTC 训练样本由干净动作前缀和带噪后缀组成"> <defs><style>.t{font-size:12px;fill:currentColor}.s{font-size:10.5px;fill:currentColor;opacity:.7}.p{fill:var(--global-theme-color,#b509ac);opacity:.38}.n{fill:var(--global-divider-color,#999);opacity:.22}.g{stroke:var(--global-divider-color,#aaa);stroke-width:1;stroke-dasharray:4 3}</style></defs> <text class="t" x="35" y="67">动作输入 x</text><rect class="p" x="175" y="35" width="240" height="62" rx="7"></rect><rect class="n" x="415" y="35" width="430" height="62" rx="7"></rect><text class="t" x="295" y="65" text-anchor="middle">干净前缀 a₀ … a(d−1)</text><text class="t" x="630" y="65" text-anchor="middle">带噪后缀 x(d) … x(H−1)</text><text class="s" x="295" y="85" text-anchor="middle">已承诺条件</text><text class="s" x="630" y="85" text-anchor="middle">需要学习生成</text> <text class="t" x="35" y="166">Token 时间</text><rect class="p" x="175" y="134" width="240" height="62" rx="7"></rect><rect class="n" x="415" y="134" width="430" height="62" rx="7"></rect><text class="t" x="295" y="170" text-anchor="middle">τᵢ = 1</text><text class="t" x="630" y="170" text-anchor="middle">τᵢ = τ</text> <line class="g" x1="415" y1="22" x2="415" y2="222"></line><text class="s" x="415" y="247" text-anchor="middle">模拟延迟边界 d</text><text class="s" x="175" y="275">干净前缀不是 padding：它携带当前策略模式和机器人即将执行的真实承诺。</text> </svg> <figcaption>同一个样本内部同时出现数据端时间与普通 Flow 时间，所以时间条件必须沿动作 Token 维度表达。前缀值来自示范动作，不是零填充。</figcaption> </figure> <hr> <h2 id="三逐-token-flow-时间改变了什么">三、逐 Token Flow 时间改变了什么</h2> <p>普通 Flow Policy 常把单个 \(\tau\) 嵌入后广播给整段动作。Training-Time RTC 则需要时间张量形如 \([B,H]\)，让前缀 Token 知道自身已经处于动作端，让后缀 Token 知道当前噪声水平。</p> <div class="rtc-grid"> <div> <h3>没有改变的部分</h3>动作编码器、观测条件、主干网络和速度输出仍可沿用基础策略；RTC 没有要求额外训练一个独立网络。</div> <div> <h3>必须支持的语义</h3>时间嵌入要能为不同动作位置提供不同条件；若原实现强制一个 batch 标量，就需要扩展输入、广播和注意力路径。</div> </div> <p>训练代码还要分清三种轴：batch 维、动作时间维和动作通道维。一个常见错误是把 <code class="language-plaintext highlighter-rouge">delay</code> mask 误广播到 batch 或 action dimension，表面形状可运行，语义却变成整批共用一个前缀。</p> <hr> <h2 id="四速度目标与符号审计">四、速度目标与符号审计</h2> <p>本页路径为</p> \[x_\tau=(1-\tau)\epsilon+\tau A,\] <p>所以对 \(\tau\) 求导得到</p> \[u_\tau=A-\epsilon.\] <p>这里需要明确记录论文 v2 内部的符号不一致：正文式 (2) 印成 \(\epsilon-A\)，但它与式 (1) 的导数相反。论文附录 Algorithm 1、固定版本 Kinetix 代码以及从 \(\tau=0\) 到 \(1\) 的正向 Euler 更新都使用</p> \[u_\tau=A-\epsilon.\] <p>因此，按论文给出的路径和正向积分器复现时，应以 \(A-\epsilon\) 为监督目标；不能只照抄式 (2) 的符号。若另一代码库采用时间 1 为噪声、时间 0 为动作，则路径、速度符号和积分步长必须成套反向，不能只改其中一项。</p> <p>复现时不应凭变量名 <code class="language-plaintext highlighter-rouge">t</code> 猜方向，至少做三项单元测试：</p> <ul> <li>端点：代入起止时间，确认得到噪声与动作；</li> <li>导数：对插值式显式求导，与监督速度完全一致；</li> <li>一步方向：用解析常速度场执行一次 Euler，确认状态向动作端移动。</li> </ul> <p>一般代码库之间的符号差异可能来自时间参数化；但本论文式 (1)、式 (2) 与附录代码放在同一时间约定下比较时，式 (2) 确实与另外两处不一致。页面把它记录为复现时需要绕开的公式符号问题，而不据此否定方法本身。</p> <hr> <h2 id="五后缀-masked-loss">五、后缀 Masked Loss</h2> <p>前缀是已给定条件，不需要模型再次预测。论文 Algorithm 1 与固定版本 Kinetix 实现都只在 \(i\ge d\) 的后缀上计算误差。对单个无 padding 样本，它们实际采用“按有效动作时刻归一化、动作通道求和”的形式：</p> \[\mathcal L_{\mathrm{src}} = \frac{ \sum_{i=d}^{H-1}\sum_{m=1}^{M} \left(v_{\theta,i,m}-u_{i,m}\right)^2 }{ H-d }.\] <p>原因是源码的后缀 mask 形状为 \([B,H,1]\)：乘法时广播到动作通道，但分母只对 mask 本身求和。若项目希望真正按每个标量元素取均值，可显式改为</p> \[\mathcal L_{\mathrm{elem}} = \frac{1}{M(H-d)} \sum_{i=d}^{H-1}\sum_{m=1}^{M} \left(v_{\theta,i,m}-u_{i,m}\right)^2.\] <p>当所有样本的动作维数 \(M\) 固定时，两者只相差常数尺度，但学习率、梯度裁剪和与其他 loss 的权重都会受影响；页面不能把可选的元素均值冒充成公开源码原式。</p> <p>这也意味着 \(d=0\) 时，训练输入、监督目标和有效 mask 在语义上退化为普通 Flow Matching，但固定源码的 loss 数值是普通全元素均值的 \(M\) 倍，并非数值完全相等。对一个含不同 \(d\) 的 batch，源码按所有有效动作时刻统一归一化，因此后缀更长的样本会贡献更多有效时刻；若要每个样本等权，必须先做逐样本归一化并记录这一实现差异。</p> <div class="rtc-callout"> <p><strong>两种 mask 不同</strong>：RTC prefix mask 表示“已经承诺的干净动作”；数据集 padding mask 表示“样本没有这个有效动作”。真实训练若两者并存，loss 有效区应同时满足“不是 RTC 前缀”且“不是 padding”。</p> </div> <p>若直接对全长求均值，前缀长度变化会改变有效后缀的隐式权重；若 \(d\) 可取到 \(H\)，还会产生空后缀。论文附录的整数采样上界是开区间，但项目仍须同时断言 \(d&lt;H\) 和运行时可对齐条件 \(d\le H-s\)。</p> <hr> <h2 id="六延迟采样分布决定模型见过什么">六、延迟采样分布决定模型见过什么</h2> <p>训练延迟 \(d\) 不只是数据增强参数，它定义了部署条件的覆盖范围。训练分布应覆盖实际系统可能出现的延迟；若线上 \(d\) 超过训练最大值，就是明确的外推。</p> <p>在固定 commit <code class="language-plaintext highlighter-rouge">9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b</code> 中，官方 Kinetix <code class="language-plaintext highlighter-rouge">loss()</code> 设可采样延迟数为 \(D\)，使用</p> \[\Pr(d=k) \propto \exp(D-1-k), \qquad k\in\{0,\ldots,D-1\},\] <p>所以较小 delay 获得指数级更高的采样权重。论文的 Kinetix 实验使用 \(\{0,1,2,3,4\}\) 上指数递减的权重；论文附录示例和真机实验则使用均匀分布。延迟分布是实验/实现选择，不是方法要求所有机器人照搬的唯一分布。</p> <p>还要注意整数上界语义：附录示例的随机整数接口使用开区间上界，即传入 \(D\) 时只能采到 \(0,\ldots,D-1\)；正文“0 到 10”按自然语言可能被读成包含 10。复现时应直接记录可取集合，而不是只写一个含糊的 maximum delay。</p> <p>选择分布时应回答：</p> <ul> <li>真实延迟直方图是什么，而不是只有平均值；</li> <li>是否需要刻意上采样长尾延迟；</li> <li>每个 \(d\) 是否仍留下足够长的训练后缀；</li> <li>不同控制频率下同一个毫秒延迟对应多少动作步；</li> <li>训练与部署的 \(H\)、控制频率和时间取整规则是否一致。</li> </ul> <hr> <h2 id="七优化器rtc-改了输入和-loss没有发明新优化器">七、优化器：RTC 改了输入和 Loss，没有发明新优化器</h2> <p>Training-Time RTC 仍用基础策略的常规反向传播更新参数。Adam、AdamW、学习率、warmup、权重衰减、梯度裁剪和混合精度都属于具体基础实现的训练配方。</p> <div class="rtc-tbl"> <table> <thead> <tr> <th>项目</th> <th>RTC 的要求</th> <th>需要由项目自行记录</th> </tr> </thead> <tbody> <tr> <td>输入</td> <td>干净前缀 + 带噪后缀 + 逐 Token 时间</td> <td>动作归一化、观测编码与 batch 形状</td> </tr> <tr> <td>目标</td> <td>与时间方向一致的 Flow 速度</td> <td>基础模型已有目标定义</td> </tr> <tr> <td>Loss</td> <td>排除 RTC 前缀并组合 padding mask</td> <td>通道权重、正则项、额外任务 loss</td> </tr> <tr> <td>参数更新</td> <td>对策略参数常规反向传播</td> <td>优化器、学习率、冻结层、精度策略</td> </tr> <tr> <td>checkpoint</td> <td>必须接受训练时前缀条件</td> <td>从头训练或从哪个基础权重微调</td> </tr> </tbody> </table> </div> <p>公开 Kinetix 仿真代码不能证明 π0.6、π0.7 或其他未公开模型采用了某套完整私有训练超参数。本页只陈述方法接口和可核验的公开实现。</p> <hr> <h2 id="八trained-推理路径">八、Trained 推理路径</h2> <p>训练完成后，在线推理不再计算引导误差与 VJP：</p> <div class="rtc-code"><pre>TrainedRTCInference(observation, previous_chunk, delay):
-    align and right-pad previous_chunk into the new chunk coordinates
-    x = GaussianNoise(shape = action_chunk)
-    for each Flow step at time tau:
-        x[position &lt; delay] = previous_chunk[position &lt; delay]
-        token_time[position &lt; delay] = 1
-        token_time[position &gt;= delay] = tau
-        velocity = policy(observation, x, token_time)
-        x = x + step_size * velocity
-    return x</pre></div> <p>传入的 <code class="language-plaintext highlighter-rouge">previous_chunk</code> 不是未经处理的完整旧块，而是先按运行时的 \(s\) 对齐、再右侧补齐到 \(H\) 的旧块后缀；其中只有前 \(d\) 个位置有效。</p> <p>公开实现会在每次模型评估前把前缀重新写回旧动作，并把相应时间设为 1，使模型每一步看到的都是干净条件。随后 Euler 更新仍会改动整个 \(x\)，因此最后一次更新后的返回张量不保证前缀数值完全未变；这不影响 RTC，因为这些前缀位置已经过期并会跳过。若下游接口要求返回块前缀也保持逐元素不变，应在循环结束后再显式覆盖一次，但要标明这是接口增强。</p> <p>结果返回系统后，仍要按真实经过时间选择下一执行索引；训练时条件化没有替代<a href="/knowledge/imitation-learning/vla/rtc/runtime/">异步调度页</a>的时间对齐。</p> <hr> <h2 id="九guided-与-trained-怎么选">九、Guided 与 Trained 怎么选</h2> <div class="rtc-tbl"> <table> <thead> <tr> <th>维度</th> <th>Guided RTC</th> <th>Training-Time RTC</th> </tr> </thead> <tbody> <tr> <td>是否需要兼容训练</td> <td>通常不需要重新训练已有兼容 Flow Policy</td> <td>需要训练或微调支持前缀条件的 checkpoint</td> </tr> <tr> <td>在线计算</td> <td>每个 Flow 步含 denoiser VJP</td> <td>策略前向与前缀覆盖，无 RTC VJP</td> </tr> <tr> <td>主要超参数</td> <td>Soft Mask、最大引导权重、积分步数</td> <td>模拟延迟范围与采样分布</td> </tr> <tr> <td>旧 checkpoint</td> <td>可先尝试适配</td> <td>不能把普通权重直接当作已学会前缀条件</td> </tr> <tr> <td>调试重点</td> <td>Jacobian 方向、权重爆炸、采样稳定性</td> <td>逐 Token 时间、loss mask、训练覆盖范围</td> </tr> <tr> <td>主要风险</td> <td>推理变慢或过强引导压制新观测</td> <td>训练分布与部署延迟不匹配</td> </tr> </tbody> </table> </div> <p>选择不是单纯“trained 一定更好”。如果只有既有 checkpoint、训练预算有限，guided 更容易验证；如果部署延迟和吞吐要求严格，且能训练兼容模型，trained 路线可减少在线求导开销。</p> <hr> <h2 id="十训练与推理验收">十、训练与推理验收</h2> <ul class="task-list"> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>\(d=0\) 时，输入与 mask 语义退化为普通 Flow 训练；同时验证所选归一化下的预期 loss 尺度；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>最大 \(d\) 同时满足 \(d&lt;H\) 与运行时 \(d\le H-s\)；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>干净前缀值等于真实动作，不是零 padding；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>前缀不计预测 loss，padding 也不计 loss；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>逐 Token 时间形状和广播维度有单元测试；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>路径端点、速度目标和 Euler 方向通过解析测试；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>推理每次模型评估前都重新固定前缀；若接口要求最终前缀不变，循环后再覆盖；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>部署延迟直方图落在训练覆盖范围内；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>trained checkpoint 与普通 checkpoint 在相同任务、相同延迟下对照；</li> <li class="task-list-item"> <input type="checkbox" class="task-list-item-checkbox" disabled>训练配置记录优化器、冻结层和基础权重来源，不归因给 RTC 论文。</li> </ul> <hr> <h2 id="参考与继续阅读">参考与继续阅读</h2> <ul> <li>训练时方法：<a href="https://arxiv.org/abs/2512.05964" rel="external nofollow noopener" target="_blank">Training-Time Action Conditioning for Efficient Real-Time Chunking</a>。</li> <li>官方 Kinetix 固定版本：<a href="https://github.com/Physical-Intelligence/real-time-chunking-kinetix/blob/9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b/src/model.py" rel="external nofollow noopener" target="_blank">src/model.py @ 9296f31</a>。</li> <li>LeRobot 文档：<a href="https://huggingface.co/docs/lerobot/main/rtc" rel="external nofollow noopener" target="_blank">Real-Time Chunking</a>。</li> <li>下一页：<a href="/knowledge/imitation-learning/vla/rtc/source-code/">源码与工程接入</a>。</li> </ul> </article> </div> </div> </div> </div> <footer class="fixed-bottom" role="contentinfo"> <div class="container mt-0"> © Copyright 2026 DDS . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>. </div> </footer> <script>
+</script>
+
+<style>
+.rtct-grid,.rtct-route{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1.2rem 0}.rtct-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.rtct-grid>article,.rtct-route>article{border:1px solid var(--global-divider-color,#ddd);border-radius:12px;padding:1rem 1.05rem;background:var(--global-card-bg-color,transparent)}.rtct-grid h3,.rtct-route h3{font-size:1rem;margin:.05rem 0 .5rem}.rtct-grid p,.rtct-route p{font-size:.86rem;line-height:1.65;margin:.35rem 0}.rtct-route>article{display:flex;flex-direction:column}.rtct-route nav{margin-top:auto;padding-top:.6rem}.rtct-route a{display:inline-flex;align-items:center;min-height:44px}.rtct-figure{margin:1.45rem 0 1.8rem;overflow-x:auto}.rtct-figure svg{display:block;width:100%;min-width:680px;max-width:980px;height:auto;margin:0 auto}.rtct-figure figcaption{max-width:920px;margin:.65rem auto 0;font-size:.82rem;line-height:1.65;opacity:.78}.rtct-figure text{fill:currentColor}.rtct-figure .muted{opacity:.7}.rtct-figure .line{stroke:currentColor;stroke-width:1.2;fill:none}.rtct-figure .dash{stroke:currentColor;stroke-width:1.35;stroke-dasharray:6 5;fill:none}.rtct-figure .accent{stroke:var(--global-theme-color,#b509ac);stroke-width:2;fill:none}.rtct-figure .accent-fill{fill:var(--global-theme-color,#b509ac);opacity:.2}.rtct-figure .neutral{fill:var(--global-divider-color,#aaa);opacity:.28}.rtct-eq{overflow-x:auto}.rtct-checks{columns:2;column-gap:2rem}.rtct-checks li{break-inside:avoid;margin-bottom:.45rem}.rtct-center{text-align:center;font-size:1.08rem;font-weight:650;max-width:900px;margin:1.1rem auto}.rtct-badge{display:inline-block;border:1px solid var(--global-divider-color,#ccc);border-radius:999px;padding:.08rem .52rem;font-size:.75rem}@media(max-width:900px){.rtct-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.rtct-grid,.rtct-route{grid-template-columns:1fr}.rtct-checks{columns:1}.rtct-figure svg{min-width:620px}}@media(prefers-reduced-motion:reduce){.rtct-grid *,.rtct-route *{animation:none!important;transition:none!important}}@media print{.rtct-grid,.rtct-route{display:block}.rtct-grid>article,.rtct-route>article{break-inside:avoid;margin:.7rem 0}.rtct-figure{overflow:visible}.rtct-figure svg{min-width:0}}
+</style>
+
+<nav class="note-nav" aria-label="面包屑">
+  <a href="/knowledge/">知识库</a>
+  <span class="sep" aria-hidden="true">·</span>
+  <a href="/knowledge/imitation-learning/">机器人模仿学习与 VLA</a>
+  <span class="sep" aria-hidden="true">·</span>
+  <a href="/knowledge/imitation-learning/vla/rtc/">RTC</a>
+  <span class="sep" aria-hidden="true">·</span>
+  <span class="cur" aria-current="page">Training-Time RTC</span>
+</nav>
+
+<div class="note-callout">
+
+  <ul>
+    <li>
+<strong>必读前驱：</strong>先完成 <a href="/knowledge/imitation-learning/vla/rtc/foundations/">RTC Foundations</a>，能够用绝对 tick、Action ABI 与 authority epoch 定义部署可得 prefix。</li>
+    <li>
+<strong>范围：</strong>本页只拥有训练样本、逐 Token 时间、后缀 Loss、checkpoint capability 与 trained sampler；训练平台配方、异步队列和安全执行不在本页。</li>
+    <li>
+<strong>流程边界：</strong>页面不运行训练、模型、仿真或机器人，不给出真实路径、账户、设备参数或可执行命令，不上传，也不自动备份。</li>
+  </ul>
+
+</div>
+
+<p class="rtct-center">Training-Time RTC 在训练时随机模拟 delay，把将由旧块执行的动作 prefix 作为干净条件，只学习生成 postfix；推理时因此不需要 Guided VJP，但必须使用学过该条件接口的兼容 checkpoint。</p>
+
+<ul class="il-learning-outcomes">
+  <li>构造每样本不同 delay、三轴清晰且无 future leakage 的训练 batch。</li>
+  <li>区分 prefix/postfix、padding/channel mask 与四种 Loss 归一化口径。</li>
+  <li>用 capability manifest 验证 trained checkpoint，并把 proposal 交给 Runtime 而非直接 dispatch。</li>
+</ul>
+
+<h2 id="training-time-branch">Training-Time 分支：把 prefix 条件移到训练</h2>
+
+<h3 id="四张方法边界卡">四张方法边界卡</h3>
+
+<div class="rtct-grid">
+  <article><h3>Clean Prefix</h3>
+<p>prefix 直接位于动作端。训练来自 ground truth，部署来自 actual committed/dispatched 动作；二者存在 exposure gap。</p></article>
+  <article><h3>Per-Token Time</h3>
+<p>同一 chunk 内 prefix 时间为 1，postfix 时间为基础 <code>tau</code>。模型接口必须支持 <code>[B,H]</code> 时间语义。</p></article>
+  <article><h3>Postfix Loss</h3>
+<p>prefix 只作条件，不参与预测误差；仍须与 dataset validity、padding 和 action-channel mask 合成。</p></article>
+  <article><h3>Trained Mode</h3>
+<p>在线不做 Guided VJP，但它不是普通 checkpoint 的运行时开关，也不代表整个系统零额外成本。</p></article>
+</div>
+
+<h3 id="相比基础-flow-的三个改动">相比基础 Flow 的三个改动</h3>
+
+<ol>
+  <li>每个样本采样训练 delay <code class="language-plaintext highlighter-rouge">d_train_b</code>，让一段动作成为部署时可获得的条件。</li>
+  <li>为动作时间轴构造 <code class="language-plaintext highlighter-rouge">tau_token[B,H]</code>：prefix 置 1，postfix 保留基础 Flow 时间。</li>
+  <li>Loss 只监督有效 postfix，并把 mask、广播轴和分母口径写入 manifest。</li>
+</ol>
+
+<p>模型参数仍通过基础训练器常规反向传播更新；方法没有发明新 optimizer，也不要求额外训练一个独立 RTC 网络。但输入接口、time embedding broadcast、batch collator、Loss 和 checkpoint capability 都发生了可验证变化，不能概括成“架构完全不改”。</p>
+
+<h3 id="与-guided-平行不是升级链">与 Guided 平行，不是升级链</h3>
+
+<p>Guided 用既有兼容 iterative policy 在推理期做 VJP，Training-Time 则先训练 prefix/delay conditioning。它们共享 Foundations 的时间与动作 contract，但不共享 checkpoint 要求。Training-Time 不是 Guided 的“下一代”，Guided 也不是 trained 模式的必需前置；二者从 Foundations 等权分叉，并在 Runtime 以 <code class="language-plaintext highlighter-rouge">merge_policy:any</code> 汇合。</p>
+
+<p>“消除 inference-time overhead”只指不再执行 Guided 的 reverse-mode VJP。prefix 对齐、逐 Token 时间、hard overwrite、shape/finite 验证、queue 与 provenance 仍有成本，系统级 latency 仍需测量。</p>
+
+<h3 id="训练条件必须对应部署时真正可得的信息">训练条件必须对应部署时真正可得的信息</h3>
+
+<p>方法成立的关键不是把数组前几项设成干净动作，而是这些动作在部署时确实已经由旧块提供并被 Runtime/authority 承诺。训练样本若使用未来 demonstration action，却在真实部署的同一时刻尚未可知，就形成 target leakage；离线 Loss 会很好看，在线模型却依赖不存在的条件。每个 prefix 位置都要关联 nominal target tick 和 availability rule。</p>
+
+<p>Training-Time 分支也不自动获得更强 reactivity。它学习在给定 clean prefix 后生成 postfix；prefix 越长，可供新 observation 改变的 horizon 越短。连续性、fresh-observation 反应、任务成功与 safety intervention 必须分开评测。训练 support 覆盖某个 delay 只说明模型见过该条件，不证明闭环一定稳定或安全。</p>
+
+<p>在线不做 VJP 可能降低单次 sampler 计算，但新 checkpoint 的模型结构、time embedding 或前缀处理也可能改变前向成本。编译、memory、prefix overwrite、processor 和 queue latency 都要在相同 measurement boundary 下比较；不能把论文里的算法性省略翻译成“零 RTC 成本”。</p>
+
+<p>这一页最终交付的是训练/推理能力 contract，不是训练配方。具体 batch size、learning rate、epoch、device mesh、checkpoint path 与机器人参数必须由项目自己的训练和部署文档拥有，并有独立风险审查。</p>
+
+<h2 id="prefix-postfix-samples">训练样本：干净 prefix 与带噪 postfix</h2>
+
+<h3 id="batch-轴动作轴和通道轴先分清">Batch 轴、动作轴和通道轴先分清</h3>
+
+<p>训练动作 <code class="language-plaintext highlighter-rouge">A</code> 与噪声 <code class="language-plaintext highlighter-rouge">epsilon</code> 的 shape 都是 <code class="language-plaintext highlighter-rouge">[B,H,M]</code>：<code class="language-plaintext highlighter-rouge">B</code> 是 batch，<code class="language-plaintext highlighter-rouge">H</code> 是动作时间，<code class="language-plaintext highlighter-rouge">M</code> 是动作通道。基础 Flow 时间 <code class="language-plaintext highlighter-rouge">tau</code> 为 <code class="language-plaintext highlighter-rouge">[B]</code>，每样本模拟 delay <code class="language-plaintext highlighter-rouge">d_train</code> 为 <code class="language-plaintext highlighter-rouge">[B]</code> integer。任何 reshape、broadcast 或 gather 都要标明影响哪一轴。</p>
+
+<p>对每个样本 <code class="language-plaintext highlighter-rouge">b</code>：</p>
+
+\[P_{b,i}=\mathbf 1[i&lt;d_b],
+\qquad
+Q_{b,i}=\neg P_{b,i}.\]
+
+<p>其中 <code class="language-plaintext highlighter-rouge">P/Q</code> shape 为 <code class="language-plaintext highlighter-rouge">[B,H]</code>。prefix、postfix 与 overlap 不同：prefix 是新块局部 <code class="language-plaintext highlighter-rouge">[0,d_train)</code>；postfix 是 <code class="language-plaintext highlighter-rouge">[d_train,H)</code>；overlap 是 Foundations 中按绝对 tick 得到的旧/新块共同区域，Training-Time 方法不会自动把整个 overlap 都作为条件。</p>
+
+<h3 id="逐-token-时间和输入构造">逐 Token 时间和输入构造</h3>
+
+\[\tau_{b,i}^{\mathrm{token}}
+=
+\begin{cases}
+1,&amp;i&lt;d_b,\\
+\tau_b,&amp;i\ge d_b,
+\end{cases}\]
+
+\[X_{b,i,m}
+=
+(1-\tau_{b,i}^{\mathrm{token}})\epsilon_{b,i,m}
++
+\tau_{b,i}^{\mathrm{token}}A_{b,i,m}.\]
+
+<p>因此 prefix 恰为 clean action <code class="language-plaintext highlighter-rouge">X=A</code>，postfix 留在普通 Flow 路径。训练时的 clean prefix 来自 ground truth；部署时来自旧 policy 的 committed/dispatched 动作，可能带模型误差、safety rewrite、controller clipping 与状态偏差。二者不能被称为同一分布。</p>
+
+<figure class="rtct-figure">
+<svg viewbox="0 0 980 380" role="img" aria-labelledby="rtct-sample-title rtct-sample-desc">
+  <title id="rtct-sample-title">Training-Time RTC 样本的 prefix、postfix、Token 时间与 Loss 区域</title>
+  <desc id="rtct-sample-desc">每个样本在 delay d 处分段。prefix 使用干净动作并把 Token 时间设为一，不计预测 Loss。postfix 混合动作与噪声，Token 时间为基础 tau，并在数据有效位置计入 Loss。padding 区始终无效。</desc>
+  <text x="25" y="78" font-size="13">输入 X</text><text x="25" y="163" font-size="13">token time</text><text x="25" y="248" font-size="13">loss mask</text>
+  <rect class="accent-fill" x="150" y="40" width="260" height="58" rx="7"></rect><rect class="neutral" x="410" y="40" width="380" height="58" rx="7"></rect><rect fill="none" stroke="currentColor" stroke-dasharray="4 4" x="790" y="40" width="120" height="58" rx="7"></rect>
+  <rect class="accent-fill" x="150" y="125" width="260" height="58" rx="7"></rect><rect class="neutral" x="410" y="125" width="380" height="58" rx="7"></rect><rect fill="none" stroke="currentColor" stroke-dasharray="4 4" x="790" y="125" width="120" height="58" rx="7"></rect>
+  <rect fill="none" stroke="currentColor" x="150" y="210" width="260" height="58" rx="7"></rect><rect class="accent-fill" x="410" y="210" width="380" height="58" rx="7"></rect><rect fill="none" stroke="currentColor" stroke-dasharray="4 4" x="790" y="210" width="120" height="58" rx="7"></rect>
+  <text x="280" y="74" text-anchor="middle" font-size="12">clean prefix · A</text><text x="600" y="74" text-anchor="middle" font-size="12">noisy postfix · tau A + (1-tau) epsilon</text><text x="850" y="74" text-anchor="middle" font-size="12">padding</text>
+  <text x="280" y="159" text-anchor="middle" font-size="12">1 · action endpoint</text><text x="600" y="159" text-anchor="middle" font-size="12">tau_b · flow path</text><text x="850" y="159" text-anchor="middle" font-size="12">invalid</text>
+  <text x="280" y="244" text-anchor="middle" font-size="12">0 · condition only</text><text x="600" y="244" text-anchor="middle" font-size="12">Q and D_valid and C_valid</text><text x="850" y="244" text-anchor="middle" font-size="12">0</text>
+  <line class="dash" x1="410" y1="25" x2="410" y2="285"></line><line class="dash" x1="790" y1="25" x2="790" y2="285"></line>
+  <text x="410" y="312" text-anchor="middle" font-size="12">d_train</text><text x="790" y="312" text-anchor="middle" font-size="12">H_valid</text><text x="910" y="312" text-anchor="middle" font-size="12">H</text>
+  <text class="muted" x="150" y="348" font-size="12">三层带状图只说明张量语义，不提供真实 delay、控制频率或训练参数。</text>
+</svg>
+<figcaption>图 1｜训练样本三层带状图。Clean prefix 是条件，不是 padding；postfix 才计预测 Loss；超过 `H_valid` 的 padding 无论属于哪个局部 index 都必须无效。颜色之外还使用标签、边界和线型。</figcaption>
+</figure>
+
+<h3 id="mask-合成顺序与空样本拒绝">Mask 合成顺序与空样本拒绝</h3>
+
+<p><code class="language-plaintext highlighter-rouge">D_valid[B,H]</code> 表示数据时刻是否真实存在，<code class="language-plaintext highlighter-rouge">C_valid[B,M]</code> 或 <code class="language-plaintext highlighter-rouge">[M]</code> 表示动作通道是否有效。最终元素 mask 为：</p>
+
+\[L_{\mathrm{mask},b,i,m}
+=
+Q_{b,i}\land D_{\mathrm{valid},b,i}\land C_{\mathrm{valid},b,m}.\]
+
+<p>prefix mask 不能替代 padding mask；padding 也不能被当成“已知前缀”。组合前检查 shape/dtype，组合后计算每样本与全 batch 的有效 postfix 时刻/元素计数。分母为零的样本或 batch 返回 typed data error，不能加 epsilon 掩盖数据错误。</p>
+
+<h3 id="collator-输出要可逆到单样本事实">Collator 输出要可逆到单样本事实</h3>
+
+<p>Batch collator 常把可变长度样本 pad 到共同 <code class="language-plaintext highlighter-rouge">H</code>，这里最容易把 <code class="language-plaintext highlighter-rouge">d_train</code>、<code class="language-plaintext highlighter-rouge">H_valid</code> 和全局 <code class="language-plaintext highlighter-rouge">H</code> 混在一起。对每个样本先在未 padding 坐标中验证 <code class="language-plaintext highlighter-rouge">0&lt;=d_b&lt;H_valid_b</code>，再 pad <code class="language-plaintext highlighter-rouge">A/epsilon/D_valid</code>；prefix/postfix mask 仍按局部有效长度生成。若先按 batch 最大长度采 delay，短样本可能得到空 postfix。</p>
+
+<p>记录 <code class="language-plaintext highlighter-rouge">sample_id -&gt; batch row</code>、原始长度、采样 delay、mask digest 与随机数流，使任一 batch row 都能脱离 batch 复算。数据增强、subsequence crop 或 time shift 若改变有效长度，必须发生在 delay sampling 前或明确重算 mask；不能裁剪动作后继续沿用旧 <code class="language-plaintext highlighter-rouge">d_train</code>。</p>
+
+<p>三轴 permutation tests 能抓住静默广播错误：交换 batch row 时所有同属记录一起交换；交换动作时间时需要同步交换 action、token time 与 time mask；交换 channel 时同步交换 action 与 channel validity，但不改变 prefix boundary。若只交换一个 tensor 仍不报错，说明 contract 检查不足。</p>
+
+<p>训练日志默认保存 digest、计数和受控 artifact reference，不复制敏感视频、语言指令或完整动作。需要抽样可视化时使用经过授权、脱敏并与数据 release 绑定的制品，页面不提供实际数据导出路径。</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">training_sample_record</span><span class="pi">:</span>
+  <span class="na">schema</span><span class="pi">:</span> <span class="s">rtc.training-time.sample/v1</span>
+  <span class="na">sample_id</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque&gt;"</span>
+  <span class="na">chunk_shape</span><span class="pi">:</span> <span class="s2">"</span><span class="s">[B,H,M]"</span>
+  <span class="na">d_train</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int-per-example&gt;"</span>
+  <span class="na">prefix_mask_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">postfix_mask_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">dataset_validity_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">channel_validity_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref|null&gt;"</span>
+  <span class="na">token_time_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">action_abi_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">normalization_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">leakage_check</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;pass|fail&gt;"</span>
+</code></pre></div></div>
+
+<h3 id="部署可得性与-future-leakage">部署可得性与 future leakage</h3>
+
+<p>训练 prefix 中的每个位置都必须在对应部署时刻可由旧块 actual/committed provenance 提供。不能把新 observation 后才知道的 future action、完整示范后缀、未来状态或任务结果塞进条件。泄漏测试应基于事件与绝对 tick，而不只看数组 index。</p>
+
+<p>训练 ground-truth prefix 比部署的 policy-generated prefix 更干净，会形成 exposure gap。可选的扰动、rollout prefix、safety-modified prefix 或混合数据都属于方法迁移，必须有版本化分布与单独实验；不能把它们写成论文默认。任何增强都不能破坏 Action ABI 或让训练看到部署不可获得的信息。</p>
+
+<h3 id="exposure-gap-要拆成四种来源">Exposure gap 要拆成四种来源</h3>
+
+<p>第一是数值误差：部署 prefix 来自模型、量化、adapter 与 controller，未必等于 demonstration。第二是状态误差：即使命令相同，机器人反馈状态和 observation 也可能因动力学、延迟或扰动不同。第三是 authority 误差：safety/human/fallback 可能改写旧动作。第四是分布误差：训练 delay、任务、硬件和负载与部署不同。四类 gap 的缓解和 owner 不同，不能只加统一噪声。</p>
+
+<p>若采用 rollout-generated prefix，应记录生成 policy/checkpoint、环境/数据版本、是否经过 safety rewrite、失败样本是否保留，以及 rollout 与监督后缀的因果关系。若使用 teacher action 加人工噪声，要说明噪声空间、相关结构和截断；独立高斯扰动不一定模拟真实 controller 或 policy error。</p>
+
+<p>数据切分也要防跨轨迹泄漏。来自同一 episode 的 prefix/postfix 窗口若被分散到 train 与 validation，会让指标高估泛化；同一机器人 session 的重复片段也可能泄漏环境状态。split manifest 至少绑定 episode、task、robot/config 与时间范围，具体匿名化规则由数据治理文档定义。</p>
+
+<p>prefix 长度与 task phase 可能相关：长 delay 样本如果主要来自复杂场景或 cold-start，简单重采样会同时改变任务分布。delay sampler 应在允许范围内考虑分层或权重记录，报告 <code class="language-plaintext highlighter-rouge">q_train(d|context)</code> 是否近似独立，避免把条件偏差误当成 RTC 效果。</p>
+
+<h2 id="per-token-flow-time">逐动作 Token 时间与模型接口</h2>
+
+<h3 id="无需新参数不等于接口不变">“无需新参数”不等于接口不变</h3>
+
+<p>需要分三层描述：参数结构可能复用原网络；输入 shape 从 batch scalar time 扩展为 per-token <code class="language-plaintext highlighter-rouge">[B,H]</code>；conditioning 路径必须让不同动作 Token 收到各自 time embedding。若实现把一个 <code class="language-plaintext highlighter-rouge">[B]</code> 时间强制广播给所有位置，trained prefix 语义并未实现，即使模型仍能前向。</p>
+
+<div class="note-tbl il-method-matrix" tabindex="0" aria-label="Training-Time RTC 表格 1，逐 Token 时间接口，可横向滚动">
+
+  <p>| 接口项 | 目标 shape | 检查 |
+| — | — | — |
+| action/noise/input | <code class="language-plaintext highlighter-rouge">[B,H,M]</code> | batch、时间、通道顺序固定 |
+| base <code class="language-plaintext highlighter-rouge">tau</code> | <code class="language-plaintext highlighter-rouge">[B]</code> | finite，位于声明区间 |
+| <code class="language-plaintext highlighter-rouge">d_train</code> | <code class="language-plaintext highlighter-rouge">[B]</code> integer | <code class="language-plaintext highlighter-rouge">0&lt;=d_b&lt;H_valid_b</code> |
+| <code class="language-plaintext highlighter-rouge">tau_token</code> | <code class="language-plaintext highlighter-rouge">[B,H]</code> | prefix=1，postfix=<code class="language-plaintext highlighter-rouge">tau_b</code> |
+| time embedding | <code class="language-plaintext highlighter-rouge">[B,H,E]</code> 或等价 | 各 Token 条件不被再次塌缩 |
+| prefix/postfix mask | <code class="language-plaintext highlighter-rouge">[B,H]</code> | 不沿 batch 错播 |
+| channel validity | <code class="language-plaintext highlighter-rouge">[B,M]</code> 或 <code class="language-plaintext highlighter-rouge">[M]</code> | 只沿时间轴广播 |
+| velocity output | <code class="language-plaintext highlighter-rouge">[B,H,M]</code> | 与 target、mask 对齐 |</p>
+</div>
+
+<h3 id="参数兼容性测试">参数兼容性测试</h3>
+
+<p>用同一 checkpoint 做三个静态/微型测试：全部 Token 共用相同 time 时，新接口输出应在声明容差内匹配基础接口；改变单个 Token time 时，至少对应 conditioning 路径发生可观测变化；交换 batch 样本或 action index 后，输出按同样 permutation 变化。若模型架构允许跨 Token attention，局部 time 改变可影响其他位置，但不能被完全忽略。</p>
+
+<p>还要验证 dtype/device、padding 位置、编译 shape、不同 <code class="language-plaintext highlighter-rouge">H</code> 的支持策略与 mixed precision。checkpoint loader 应检查 capability manifest，而不是看到 tensor keys 能加载就宣称兼容。参数 shape 相同只能说明权重可放入网络，不证明它学过 prefix conditioning。</p>
+
+<h3 id="time-embedding-不能在主干入口后被意外塌缩">Time embedding 不能在主干入口后被意外塌缩</h3>
+
+<p>一些实现先生成 <code class="language-plaintext highlighter-rouge">[B,H,E]</code> time embedding，却在与 observation 融合前做 mean/pool，最终仍退化为单一 batch time。接口测试要在模型内部可观测点确认 Token 差异仍存在，而不只检查输入 tensor shape。若 attention/MLP 通过共享权重处理 Token，差异可以传播，但不能在无声明的 reduction 中消失。</p>
+
+<p>padding Token 的 time 值本身没有训练语义，但必须 finite，并由 <code class="language-plaintext highlighter-rouge">D_valid</code> 阻止进入 Loss；attention mask 还要避免 padding 影响有效 Token。RTC prefix mask 不能替代 attention padding mask。两者若合并为同一 bool，模型可能把 clean prefix 当成不可见 padding，从而完全学不到条件。</p>
+
+<p>可变 horizon 有三种策略：固定 <code class="language-plaintext highlighter-rouge">H</code> 并 padding、按有限 shape bucket 编译、或显式支持动态 shape。manifest 要声明其中一种及支持集合。把训练过 <code class="language-plaintext highlighter-rouge">H=H0</code> 的 checkpoint 直接用于更长 chunk，即使 positional encoding 能运行，也属于 out-of-capability，必须单独验证。</p>
+
+<p>兼容性回归应保存基础模式和 trained 模式的对照：全 Token 同 time、<code class="language-plaintext highlighter-rouge">d=0</code>、单 Token time perturbation、batch permutation、time-axis permutation、全 padding rejection 与 mixed precision。每项都有 tolerance 和设备条件；不允许只凭 loss 能下降判定接口正确。</p>
+
+<pre><code class="language-mermaid">flowchart LR
+  T["tau_b · [B]"] --&gt; C["construct tau_token · [B,H]"]
+  D["d_train · [B]"] --&gt; C
+  C --&gt; E["per-token time embedding · [B,H,E]"]
+  X["input X · [B,H,M]"] --&gt; P["shared policy parameters"]
+  E --&gt; P
+  P --&gt; V["velocity · [B,H,M]"]
+</code></pre>
+
+<p><strong>图 2｜逐 Token 时间接口。</strong> 可学习参数可以沿用共享 policy，但 time input、embedding broadcast 与测试契约已经改变。图不声称任意旧 checkpoint 自动获得这一能力。</p>
+
+<h2 id="flow-target-sign-audit">Flow 速度目标与论文符号审计</h2>
+
+<h3 id="站内主约定由路径导数决定">站内主约定由路径导数决定</h3>
+
+<p>本页沿用 <code class="language-plaintext highlighter-rouge">tau=0</code> 噪声、<code class="language-plaintext highlighter-rouge">tau=1</code> 动作：</p>
+
+\[X^\tau=(1-\tau)\epsilon+\tau A,
+\qquad
+\frac{\mathrm dX^\tau}{\mathrm d\tau}=A-\epsilon.\]
+
+<p>因此监督速度 <code class="language-plaintext highlighter-rouge">U=A-epsilon</code>，正向 Euler 从 noise 走向 action。prefix Token 处于 <code class="language-plaintext highlighter-rouge">tau_token=1</code>，但是否对其计算 target 并不影响 Loss，因为 prefix 被 postfix mask 排除；实现仍应让所有张量 finite，不能用 NaN target 依赖乘零消失。</p>
+
+<h3 id="论文-v2-的内部符号不一致">论文 v2 的内部符号不一致</h3>
+
+<p>论文 v2 Equation (2) 的印刷符号与 Equation (1) 路径导数、Algorithm 1 及固定 Kinetix commit 使用的方向不一致。页面把这记录为“同一版本内部不一致”，而不是未经作者确认的勘误定论。复现采用哪一方向，必须同时列路径、target、sampler 更新和固定代码证据。</p>
+
+<p>不能只凭变量名 <code class="language-plaintext highlighter-rouge">t</code>、<code class="language-plaintext highlighter-rouge">noise</code> 或 <code class="language-plaintext highlighter-rouge">velocity</code> 猜方向。其他代码库若用 <code class="language-plaintext highlighter-rouge">t=1</code> 噪声、<code class="language-plaintext highlighter-rouge">t=0</code> 动作，<code class="language-plaintext highlighter-rouge">epsilon-A</code> 可能在其反向参数化下正确；把该符号单独复制到本站正向 <code class="language-plaintext highlighter-rouge">tau</code> 约定才会出错。</p>
+
+<h3 id="三项解析测试与-evidence-note">三项解析测试与 evidence note</h3>
+
+<ol>
+  <li>端点：代入 0/1，确认分别得到 noise/action。</li>
+  <li>导数：对插值式求导，与 target 完全一致。</li>
+  <li>一步方向：常速度解析样本做 Euler，距离 action 端应按预期变化。</li>
+</ol>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">formula_sign_audit</span><span class="pi">:</span>
+  <span class="na">paper_version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">v2"</span>
+  <span class="na">path_equation</span><span class="pi">:</span> <span class="s2">"</span><span class="s">X=(1-tau)epsilon+tau*A"</span>
+  <span class="na">derived_target</span><span class="pi">:</span> <span class="s2">"</span><span class="s">A-epsilon"</span>
+  <span class="na">paper_equation_2</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;record-verbatim-sign-within-quote-limit&gt;"</span>
+  <span class="na">algorithm_1_direction</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;evidence-ref&gt;"</span>
+  <span class="na">fixed_code_commit</span><span class="pi">:</span> <span class="s2">"</span><span class="s">9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b"</span>
+  <span class="na">endpoint_test</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;pass|fail&gt;"</span>
+  <span class="na">derivative_test</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;pass|fail&gt;"</span>
+  <span class="na">euler_direction_test</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;pass|fail&gt;"</span>
+  <span class="na">conclusion_scope</span><span class="pi">:</span> <span class="s2">"</span><span class="s">internal-symbol-inconsistency;</span><span class="nv"> </span><span class="s">not-author-confirmed-erratum"</span>
+</code></pre></div></div>
+
+<p>审计记录保留原始位置与版本，避免后续论文修订或代码变化后仍沿用旧结论。页面不因一处符号冲突否定方法，也不把本站推导冒充作者声明。</p>
+
+<h3 id="sign-错误会怎样暴露">Sign 错误会怎样暴露</h3>
+
+<p>如果在正向 <code class="language-plaintext highlighter-rouge">tau</code> 路径上误用 <code class="language-plaintext highlighter-rouge">epsilon-A</code>，最小常速度例子会从动作端反向移动，训练 target 与 sampler update 的方向相冲。实际大模型可能仍因其他实现细节出现 loss 下降，所以“能训练”不是符号正确的证据。端点、解析导数和一步 Euler 测试必须独立于训练曲线存在。</p>
+
+<p>对 per-token time，prefix 处 <code class="language-plaintext highlighter-rouge">tau=1</code> 的 target sign 即使被 Loss mask 排除，也会经过前向计算。若实现计算中出现除以 <code class="language-plaintext highlighter-rouge">1-tau</code> 等端点表达，prefix 可能生成 inf/NaN 并污染其他 Token。测试要确认被 mask 的位置在 reduce 前仍 finite；不能依赖最后乘零。</p>
+
+<p>代码映射时同时记录 path function、target construction、sampler step、time adapter 与注释。只查看变量 <code class="language-plaintext highlighter-rouge">flow</code> 或 <code class="language-plaintext highlighter-rouge">velocity</code> 的名字没有证据力。若固定代码与论文新版后来一致，应新建审计版本并保留旧结论，不直接覆盖历史 run 的语义。</p>
+
+<p>公式审计结论使用 scope：<code class="language-plaintext highlighter-rouge">paper-v2 + fixed-commit + noise0_action1</code>。换论文版本、commit 或 time convention 后必须重新运行；这个 scope 也进入 checkpoint capability，避免模型与推理器各自采用不同方向却共享同一标签。</p>
+
+<h2 id="postfix-loss-normalization">后缀 Loss、Mask 与归一化</h2>
+
+<h3 id="elementwise-error-与公开实现口径">Elementwise error 与公开实现口径</h3>
+
+<p>定义元素误差：</p>
+
+\[L_{\mathrm{raw},b,i,m}
+=
+\left(V_{\theta,b,i,m}-U_{b,i,m}\right)^2.\]
+
+<p>论文 Algorithm 1 与固定 Kinetix 实现使用 shape <code class="language-plaintext highlighter-rouge">[B,H,1]</code> 的时间 mask，乘法广播到 <code class="language-plaintext highlighter-rouge">M</code>，但分母只统计有效动作时刻：</p>
+
+\[\mathcal L_{\mathrm{global\mbox{-}timestep}}
+=
+\frac{
+\sum_{b,i,m}L_{\mathrm{raw},b,i,m}L_{\mathrm{mask},b,i,m}
+}{
+\sum_{b,i}\left(Q_{b,i}\land D_{\mathrm{valid},b,i}\right)
+}.\]
+
+<p>若 channel mask 存在，分子会少若干通道，而上述分母未自动调整；因此分母语义、channel handling 与 zero-denominator policy 都必须进入 manifest。</p>
+
+<h3 id="四种不能混称的归一化">四种不能混称的归一化</h3>
+
+<div class="note-tbl il-method-matrix" tabindex="0" aria-label="Training-Time RTC 表格 2，Loss 归一化口径，可横向滚动">
+
+  <p>| 口径 | 分母 | 样本权重效应 | 备注 |
+| — | — | — | — |
+| global valid timestep | 全 batch 有效 postfix 时刻数 | postfix 长的样本贡献更多时刻 | 固定公开实现核心口径 |
+| per-example timestep | 每样本先除自身有效时刻，再 batch 平均 | 每样本等权 | 空 postfix 样本须拒绝 |
+| per-element | 有效 postfix 标量元素数 | 动作维变化时尺度更直观 | 与源码相差通道尺度 |
+| explicit weighted | 另有 sample/time/channel weight | 由声明权重决定 | 属于方法迁移，需单独验证 |</p>
+</div>
+
+<p>当所有样本的 <code class="language-plaintext highlighter-rouge">M</code> 固定且无 channel mask 时，timestep 与 element 均值相差常数 <code class="language-plaintext highlighter-rouge">M</code>，但学习率、梯度裁剪和其他 Loss 权重都会受影响，不能说完全等价。改变归一化后必须产生新 training run record，不能仍标成固定实现复现。</p>
+
+<h3 id="用一个两样本-worksheet-复算分母">用一个两样本 worksheet 复算分母</h3>
+
+<p>设 batch 中两个虚构样本的有效 postfix 时刻数分别为 2 和 6，动作维都是 4。global-timestep 分母是 8，分子包含 32 个标量误差；per-element 分母是 32；per-example 则先各除以 2 与 6，再对两样本取平均。若每个标量误差相同，三个 Loss 只差可预测尺度；若误差和 postfix 长度相关，它们的梯度方向也可能不同。</p>
+
+<p>加入 channel mask 后情况更明显：若第一个样本只有 2 个有效通道，global-timestep 分母仍按 2 个时刻统计，等价于降低该样本分子规模；per-element 会按 4 个有效元素统计。哪一种是预期必须由 manifest 决定，不能让 broadcasting 与 reduction API 隐式选择。</p>
+
+<p>Sample weight 应在明确层级应用。若权重针对整条样本，应先完成该样本规定的归一化再乘；若权重针对时间或通道，则进入元素 mask/weight。把 <code class="language-plaintext highlighter-rouge">[B]</code> 权重直接广播到 <code class="language-plaintext highlighter-rouge">[B,H,M]</code> 后又用未加权分母，会改变整体尺度。每种路径用手工小张量计算 oracle。</p>
+
+<p>Loss report 除总值外还应给有效样本数、postfix 时刻数、元素数、按 delay 分桶的分子/分母、zero/near-zero count 与梯度范数。这样才能区分优化异常、mask bug 和 delay 分布变化，避免只看一个平均标量。</p>
+
+<h3 id="loss-property-tests-不依赖大模型">Loss property tests 不依赖大模型</h3>
+
+<p>用全零 target/预测、全一固定误差和手写小张量即可验证 reduction。全一误差下，global-timestep Loss 应等于有效通道数的相应和；per-element 应为 1；per-example 每个非空样本的贡献相等。改变无效 padding 或 prefix 位置的 error，结果必须不变；改变任一有效 postfix 元素则按可计算幅度变化。</p>
+
+<p>梯度 oracle 也应覆盖 mask。对线性 <code class="language-plaintext highlighter-rouge">V_theta=w*X</code> 的单参数模型，手算不同 normalization 的 <code class="language-plaintext highlighter-rouge">dL/dw</code>，再与 autodiff 对照。这样能区分 forward Loss 数值偶然正确、backward broadcasting 却错误的情况。有限差分只用于测试，不能替代正式训练反向传播。</p>
+
+<p>全 padding、全 channel invalid、<code class="language-plaintext highlighter-rouge">d=H_valid</code>、非有限 target/prediction、负 sample weight 与非整数 delay 都必须在 reduction 前拒绝。若某个 sample 被过滤，report 要保存过滤原因和原 batch size；不能静默丢弃直到分母非零。</p>
+
+<p>与其他任务 Loss 组合时，先报告各自未加权值、权重、加权值和梯度范数，再求和。RTC postfix Loss 尺度改变会改变多任务平衡；只调 learning rate 不一定能恢复，必须把组合口径写入 training run lineage。</p>
+
+<h3 id="d0padding-与空-postfix">
+<code class="language-plaintext highlighter-rouge">d=0</code>、padding 与空 postfix</h3>
+
+<p><code class="language-plaintext highlighter-rouge">d=0</code> 时输入和 mask 语义退化为普通 Flow，但若基础 Loss 用全元素均值，数值尺度仍与 timestep 归一化不同。<code class="language-plaintext highlighter-rouge">d_train</code> 必须满足 <code class="language-plaintext highlighter-rouge">0&lt;=d_b&lt;H_valid_b</code>，保证每样本至少一个有效 postfix 时刻；所有位置 padding、channel 全无效或合成后分母为零都要拒绝 batch。</p>
+
+<p>Dataset padding、RTC prefix、channel validity、sample weight 各有独立来源。推荐顺序是先验证各 mask shape/dtype，再构造布尔有效集合，再应用显式 float weight，最后计算分子/分母。不能把 NaN error 乘零后期待消失，也不能用小 epsilon 把空 batch 变成零 Loss。</p>
+
+<h3 id="batch-聚合改变梯度尺度">Batch 聚合改变梯度尺度</h3>
+
+<p>不同 <code class="language-plaintext highlighter-rouge">d_b</code> 让每样本 postfix 长度不同。global 口径会让长 postfix 样本贡献更多 element；per-example 口径则让极短 postfix 样本也与长样本同权，可能放大高 delay 样本。二者都可研究，但要与 delay sampling distribution 一起报告，否则无法知道梯度偏重来自采样频率还是归一化。</p>
+
+<figure class="rtct-figure">
+<svg viewbox="0 0 980 350" role="img" aria-labelledby="rtct-loss-title rtct-loss-desc">
+  <title id="rtct-loss-title">Training-Time RTC Loss 的参数与 mask 所有权</title>
+  <desc id="rtct-loss-desc">动作、噪声、delay 和 validity 构造输入、Token 时间与 Loss mask。Policy 参数通过 postfix Loss 接受普通反向传播；delay 抽样和 mask 没有可学习参数。Checkpoint 保存参数与 capability lineage。</desc>
+  <defs><marker id="rtct-arrow" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"></path></marker><marker id="rtct-accent-arrow" viewbox="0 0 10 10" refx="9" refy="5" markerwidth="6" markerheight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--global-theme-color,#b509ac)"></path></marker></defs>
+  <rect class="neutral" x="25" y="40" width="180" height="70" rx="8"></rect><text x="115" y="68" text-anchor="middle" font-size="13">A / epsilon / d_train</text><text class="muted" x="115" y="90" text-anchor="middle" font-size="11">data + sampled condition</text>
+  <rect class="neutral" x="260" y="40" width="180" height="70" rx="8"></rect><text x="350" y="68" text-anchor="middle" font-size="13">X / tau_token</text><text class="muted" x="350" y="90" text-anchor="middle" font-size="11">[B,H,M] / [B,H]</text>
+  <rect class="accent-fill" x="495" y="40" width="180" height="70" rx="8"></rect><text x="585" y="68" text-anchor="middle" font-size="13">policy theta</text><text class="muted" x="585" y="90" text-anchor="middle" font-size="11">learnable parameters</text>
+  <rect class="neutral" x="730" y="40" width="190" height="70" rx="8"></rect><text x="825" y="68" text-anchor="middle" font-size="13">velocity prediction</text><text class="muted" x="825" y="90" text-anchor="middle" font-size="11">[B,H,M]</text>
+  <rect class="neutral" x="260" y="200" width="180" height="70" rx="8"></rect><text x="350" y="228" text-anchor="middle" font-size="13">Q / D_valid / C_valid</text><text class="muted" x="350" y="250" text-anchor="middle" font-size="11">non-learned masks</text>
+  <rect class="accent-fill" x="495" y="200" width="180" height="70" rx="8"></rect><text x="585" y="228" text-anchor="middle" font-size="13">postfix Loss</text><text class="muted" x="585" y="250" text-anchor="middle" font-size="11">declared normalization</text>
+  <rect class="neutral" x="730" y="200" width="190" height="70" rx="8"></rect><text x="825" y="228" text-anchor="middle" font-size="13">optimizer + checkpoint</text><text class="muted" x="825" y="250" text-anchor="middle" font-size="11">base trainer + lineage</text>
+  <path class="line" marker-end="url(#rtct-arrow)" d="M205 75 L260 75"></path><path class="line" marker-end="url(#rtct-arrow)" d="M440 75 L495 75"></path><path class="line" marker-end="url(#rtct-arrow)" d="M675 75 L730 75"></path>
+  <path class="line" marker-end="url(#rtct-arrow)" d="M350 110 L350 200"></path><path class="line" marker-end="url(#rtct-arrow)" d="M730 95 C670 130 625 150 600 200"></path><path class="line" marker-end="url(#rtct-arrow)" d="M440 235 L495 235"></path>
+  <path class="accent" marker-end="url(#rtct-accent-arrow)" d="M675 235 L730 235"></path><path class="accent" marker-end="url(#rtct-accent-arrow)" d="M825 200 C820 145 690 128 620 110"></path>
+  <text class="muted" x="475" y="322" text-anchor="middle" font-size="12">只有 policy 参数接收常规训练梯度；mask/delay 是数据条件，optimizer 仍属于基础训练器。</text>
+</svg>
+<figcaption>图 3｜梯度与参数所有权。Training-Time RTC 改输入与 Loss，普通反向传播更新 policy；它不为 delay 或 mask 引入可学习参数，也不规定具体 optimizer 超参数。</figcaption>
+</figure>
+
+<h3 id="梯度路径与记录">梯度路径与记录</h3>
+
+<p>梯度只经有效 postfix Loss 返回 policy 参数；prefix 没有直接预测误差，但作为输入条件仍会影响网络表示和 postfix 输出。冻结层、optimizer、learning rate、weight decay、warmup、clip、precision 与随机种子都属于 training run lineage，不能归因为 RTC 方法固定要求。</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">loss_normalization_record</span><span class="pi">:</span>
+  <span class="na">name</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;global_valid_timestep|per_example|per_element|explicit_weighted&gt;"</span>
+  <span class="na">numerator_mask</span><span class="pi">:</span> <span class="s2">"</span><span class="s">postfix</span><span class="nv"> </span><span class="s">&amp;</span><span class="nv"> </span><span class="s">dataset_valid</span><span class="nv"> </span><span class="s">&amp;</span><span class="nv"> </span><span class="s">channel_valid"</span>
+  <span class="na">denominator_definition</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;machine-readable-expression&gt;"</span>
+  <span class="na">empty_postfix_policy</span><span class="pi">:</span> <span class="s">reject</span>
+  <span class="na">nan_policy</span><span class="pi">:</span> <span class="s">reject_before_masked_reduce</span>
+  <span class="na">sample_weight_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref|null&gt;"</span>
+  <span class="na">gradient_scale_test</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+</code></pre></div></div>
+
+<h2 id="delay-support-distribution">Delay 支持范围与训练分布</h2>
+
+<h3 id="分清训练-support预测值和实测值">分清训练 support、预测值和实测值</h3>
+
+<p><code class="language-plaintext highlighter-rouge">d_train</code> 来自训练分布；<code class="language-plaintext highlighter-rouge">d_hat</code> 是部署请求前冻结的预测/保守 bound；<code class="language-plaintext highlighter-rouge">d_meas</code> 是结果返回后的实测 tick。三者可以数值相同，却不能共用一个字段。checkpoint capability 声明训练 support 集合，Runtime 用 <code class="language-plaintext highlighter-rouge">d_hat</code> 做调用门禁，再用 <code class="language-plaintext highlighter-rouge">d_meas</code> 判断实际 valid suffix 与是否 out-of-support。</p>
+
+<h3 id="分布必须写集合不只写-maximum">分布必须写集合，不只写 maximum</h3>
+
+<p>固定 Kinetix commit 的一种分布在整数集合 <code class="language-plaintext highlighter-rouge">{0,...,D-1}</code> 上对小 delay 指数加权；论文其他示例使用均匀分布。它们是实验/实现选择，不是所有机器人必须照搬的唯一分布。随机整数 API 的 upper bound 可能是 exclusive，自然语言“0 到 D”却容易被读为 inclusive，因此 manifest 直接列 support set 或精确定义 <code class="language-plaintext highlighter-rouge">max_delay_exclusive</code>。</p>
+
+<div class="note-tbl il-method-matrix" tabindex="0" aria-label="Training-Time RTC 表格 3，Delay 分布选择，可横向滚动">
+
+  <p>| 分布/策略 | 作用 | 风险 | 必须记录 |
+| — | — | — | — |
+| uniform support | 每个 delay 等概率 | 可能低估常见小 delay 或长尾 | 精确集合、seed |
+| exponential-to-small | 小 delay 权重更高 | 长 delay 样本稀少 | 未归一化权重与归一化结果 |
+| empirical histogram | 拟合观测部署分布 | 受采集偏差与未来漂移影响 | 数据窗口、硬件/负载范围 |
+| tail-upsampled | 提高长尾覆盖 | 改变平均梯度与任务权重 | upsample 规则与 loss normalization |
+| curriculum | 逐阶段扩 support | lineage 更复杂 | 每阶段 support、checkpoint parent |</p>
+</div>
+
+<h3 id="从-wall-clock-到-control-ticks">从 wall clock 到 control ticks</h3>
+
+<p>训练 support 必须绑定 control rate、rounding policy、measurement boundary 与 hardware/load mode。同一个毫秒延迟在不同控制频率下对应不同 tick；固定 <code class="language-plaintext highlighter-rouge">D</code> 不能脱离这些字段迁移。实际跨 tick 优先从 Foundations 事件 trace 得到，不用平均频率替代每次观测。</p>
+
+<p>训练/验证/测试 delay 数据要防止信息泄漏。选择 <code class="language-plaintext highlighter-rouge">q_train(d)</code> 可使用训练期已批准的部署画像，但最终评测窗口与未来 incident 不应反向调参。若部署硬件或负载改变，先标记 distribution shift，再决定追加训练或拒绝，不把新直方图静默并入旧 checkpoint claim。</p>
+
+<h3 id="out-of-support-是显式状态">Out-of-support 是显式状态</h3>
+
+<p><code class="language-plaintext highlighter-rouge">d_hat</code> 不在 support 时，trained mode 不应启动并希望模型外推；Runtime 可以选择 compatible Guided、fallback 或 safe state，但策略由部署 contract 决定。<code class="language-plaintext highlighter-rouge">d_meas</code> 事后越界时，本次 proposal 即使 finite 也要标记 out-of-support，不能把任务偶然成功当成 capability 扩展证据。</p>
+
+<h3 id="support-内也不等于分布内">Support 内也不等于分布内</h3>
+
+<p>一个 delay 可能位于 support 集合，却在训练中概率极低；单纯 range check 看不出这一点。capability manifest 应同时提供 support 与 probability/bin count，Runtime/评测可标记 <code class="language-plaintext highlighter-rouge">in_support_low_evidence</code>。这不是立即拒绝的通用规则，但必须让 owner 看到模型正在使用稀疏证据区域。</p>
+
+<p>support 还受 <code class="language-plaintext highlighter-rouge">H</code>、control rate、task/hardware mode 与 measurement boundary 约束。<code class="language-plaintext highlighter-rouge">d=4</code> 在两个控制率下代表不同 wall-clock 时长，在不同 <code class="language-plaintext highlighter-rouge">H</code> 下也留下不同 postfix。迁移时不能只复制整数集合；要验证整个 delay contract 和剩余有效 horizon。</p>
+
+<h3 id="选择-q_train-的证据顺序">选择 <code class="language-plaintext highlighter-rouge">q_train</code> 的证据顺序</h3>
+
+<p>先从已批准的系统 trace 得到 delay 分解和置信区间，再按目标 ODD、硬件、负载、warm/cold 模式分层；随后确定训练要覆盖的 support 与每个 bucket 最低证据量；最后才选择 uniform、empirical、tail upsample 或 curriculum。不能先挑一个方便分布，再只收集能证明它合理的数据。</p>
+
+<p>经验直方图并非天然最佳。常见状态可能占满训练预算，让关键长尾几乎不出现；过度上采样长尾又会降低普通状态质量。decision record 应写目标函数：拟合频率、保证最小 coverage、强调 deadline 附近或分阶段扩展，并与 chosen Loss normalization 一起审查。</p>
+
+<p>每个 delay bucket 至少报告样本数、task/robot/context 覆盖、prefix/postfix 长度、有效元素数和 validation 指标。只有样本数没有内容多样性，可能是同一 episode 的重复窗口；只有平均指标则会掩盖某个 delay 彻底失败。</p>
+
+<p>重新训练扩大 support 时，旧 checkpoint capability 不自动升级。新 run 继承 parent，但产生新 support hash、数据 lineage、评测与 release。Runtime allowlist 只有在新 bundle 完成验证后才切换，并保留旧 bundle 作为可回滚制品。</p>
+
+<p>部署漂移通过版本化窗口记录：p50/p95/p99/max、deadline miss、cold/warm state、queue load 与 mode。若新尾部超出训练范围，先把 capability claim 缩小或门禁升级，再决定扩数据和继续训练。不能用线上失败样本自动回灌而跳过隐私、数据质量和 train/test 隔离。</p>
+
+<p>out-of-support 的事件仍要进入 incident/metrics，但不得把 rejected proposal 当成模型预测质量样本。否则后续统计会混入从未执行的候选或把 fallback 成功归给 trained policy。评测表必须保留 branch、gate decision 和最终 authority。</p>
+
+<pre><code class="language-mermaid">flowchart LR
+  D["deployment delay evidence"] --&gt; Q["approved q_train(d)&lt;br/&gt;support + probability"]
+  Q --&gt; C["trained checkpoint&lt;br/&gt;capability manifest"]
+  H["d_hat before request"] --&gt; G{"inside support?"}
+  C --&gt; G
+  G --&gt;|yes| I["trained inference"]
+  G --&gt;|no| R["Runtime reject / alternate branch / safe fallback"]
+  I --&gt; M["record d_meas and distribution shift"]
+</code></pre>
+
+<p><strong>图 4｜Delay 支持 gate。</strong> 训练分布与 checkpoint capability 绑定；部署前用 <code class="language-plaintext highlighter-rouge">d_hat</code> 门禁，部署后记录 <code class="language-plaintext highlighter-rouge">d_meas</code> 和漂移。图不指定 fallback 动作，也不把 support 内推理写成性能或安全保证。</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">delay_support_manifest</span><span class="pi">:</span>
+  <span class="na">unit</span><span class="pi">:</span> <span class="s">control_ticks</span>
+  <span class="na">support</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;explicit-set-or-interval-with-boundary&gt;"</span>
+  <span class="na">max_delay_exclusive</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int&gt;"</span>
+  <span class="na">distribution</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;uniform|exponential|empirical|tail-upsampled|curriculum&gt;"</span>
+  <span class="na">probability_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">control_rate_contract_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">rounding_policy</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;enum&gt;"</span>
+  <span class="na">measurement_boundary</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;event-&gt;event&gt;"</span>
+  <span class="na">evidence_window</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;versioned-range&gt;"</span>
+  <span class="na">out_of_support_policy_owner</span><span class="pi">:</span> <span class="s">runtime</span>
+</code></pre></div></div>
+
+<h2 id="optimizer-checkpoint-lineage">参数更新、Checkpoint 与 Lineage</h2>
+
+<h3 id="rtc-不发明-optimizer但必须记录训练所有权">RTC 不发明 optimizer，但必须记录训练所有权</h3>
+
+<p>Policy 参数通过基础训练器反向传播；Adam/AdamW、learning rate、warmup、weight decay、gradient clipping、mixed precision、冻结层与额外任务 Loss 都属于具体 run。Training-Time RTC 决定 prefix/postfix 输入、per-token time 和 masked Loss 语义，但不把某个公开仿真仓库的超参提升为私有 VLA 通用配方。</p>
+
+<p>从基础 checkpoint 微调时，记录 parent hash、基础 capability、修改后的 time interface、数据/代码版本和 optimizer state 是否继承。所谓“无需新增可学习参数”只说明可能复用参数结构；只要训练目标或接口改变，产出的 checkpoint 就是新的 lineage 节点。</p>
+
+<h3 id="capability-manifest-是-trained-mode-门禁">Capability manifest 是 trained mode 门禁</h3>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">trained_checkpoint_capability</span><span class="pi">:</span>
+  <span class="na">schema</span><span class="pi">:</span> <span class="s">rtc.training-time.checkpoint-capability/v1</span>
+  <span class="na">checkpoint_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">parent_checkpoint_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256|null&gt;"</span>
+  <span class="na">code_commit</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;commit&gt;"</span>
+  <span class="na">processor_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">action_abi_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">normalization_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">H</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int&gt;"</span>
+  <span class="na">M</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int&gt;"</span>
+  <span class="na">flow_time_convention</span><span class="pi">:</span> <span class="s">noise_0_action_1</span>
+  <span class="na">per_token_time_supported</span><span class="pi">:</span> <span class="kc">true</span>
+  <span class="na">prefix_conditioning_trained</span><span class="pi">:</span> <span class="kc">true</span>
+  <span class="na">delay_support_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">loss_normalization_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">training_data_lineage_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">optimizer_run_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">evaluation_protocol_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">capability_status</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;verified|scoped|rejected&gt;"</span>
+</code></pre></div></div>
+
+<p>loader 同时检查 checkpoint/code/processor、<code class="language-plaintext highlighter-rouge">H/M</code>、ABI、normalization、time convention、per-token capability、delay support 和 contract version。缺任一关键字段时 <code class="language-plaintext highlighter-rouge">capability=unknown</code>，不能因模型名称相似或 tensor keys 能加载就进入 trained mode。</p>
+
+<h3 id="训练-run-与证据不可覆盖">训练 run 与证据不可覆盖</h3>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">training_run_record</span><span class="pi">:</span>
+  <span class="na">run_id</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque&gt;"</span>
+  <span class="na">parent_checkpoint_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256|null&gt;"</span>
+  <span class="na">dataset_release_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">sample_contract_version</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;semver&gt;"</span>
+  <span class="na">delay_support_manifest_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">loss_normalization_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">optimizer_config_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">code_commit</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;commit&gt;"</span>
+  <span class="na">random_seed_policy</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;version&gt;"</span>
+  <span class="na">train_validation_split_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">produced_checkpoint_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+</code></pre></div></div>
+
+<p>失败、取消、恢复训练与继续微调都产生新记录，不原地改写已发布 manifest。训练成功也只证明 run 结束，不证明闭环质量；capability status 要结合接口测试、support gate 与评测证据。</p>
+
+<h3 id="lineage-必须能回答五个问题">Lineage 必须能回答五个问题</h3>
+
+<p>审阅者应能从 checkpoint 反查：它从哪个 parent 开始；使用哪版数据与 split；采用哪种 sample/time/Loss contract；在哪个 code/processor/optimizer 环境训练；哪些评测支持当前 capability。任何一项 unknown 都应保留，不用模型文件名、目录时间或人工记忆补全。</p>
+
+<p>resume 与 fine-tune 不同。resume 继续同一 run 的 optimizer/scheduler 状态，也要记录中断点、数据游标和环境变化；fine-tune 创建新目标或数据分布，必须是新 lineage 节点。若从普通 checkpoint 开始训练 prefix capability，parent 本身不能被回写成 trained-capable。</p>
+
+<p>发布 checkpoint 时把权重 hash、processor、normalization、Action ABI、time convention、support 与 Loss normalization 绑定为不可变 bundle。只替换 processor 或统计量就会改变模型输入语义，应创建新 release，而不是保持相同 capability hash。</p>
+
+<p>回滚选择一个已验证旧 bundle，不通过删除新文件或覆盖 latest 指针来隐藏失败 run。实验、候选与正式 release 使用不同状态；只有正式 release 才能进入部署 allowlist，且仍需 Runtime contract 检查。</p>
+
+<h2 id="trained-inference">Trained 推理与 Prefix 重写</h2>
+
+<h3 id="runtime-输入必须来自实际旧动作">Runtime 输入必须来自实际旧动作</h3>
+
+<p>trained sampler 读取 Foundations handoff：request/observation、old actual action reference、old/new anchor、Action ABI、normalization、authority epoch、<code class="language-plaintext highlighter-rouge">H/M/s_run/d_hat</code>、checkpoint capability 与 contract hash。旧块先按绝对 tick join 到新块坐标，只有有效 <code class="language-plaintext highlighter-rouge">[0,d_hat)</code> prefix 被使用；不能把未经处理的完整旧块按局部 index 直接切片。</p>
+
+<p>训练用 ground truth prefix，部署用 policy-generated committed/dispatched prefix。若 safety/controller 改写动作，target 应引用修改后 record；若 authority epoch 变化、clock session 不明、ABI/normalization 不匹配或 <code class="language-plaintext highlighter-rouge">d_hat</code> 超 support，返回 typed rejection。</p>
+
+<h3 id="每步重新覆盖-prefix-的伪代码">每步重新覆盖 prefix 的伪代码</h3>
+
+<div class="language-text highlighter-rouge"><div class="highlight"><pre class="highlight"><code>function TrainedSample(policy, observation, handoff, rng):
+    require checkpoint_capability verified and compatible
+    require contract/hash, action ABI, normalization and authority current
+    require d_hat inside checkpoint delay support
+    prefix, validity, source_ticks = align_actual_actions_by_absolute_tick(handoff)
+    require valid prefix exactly covers [0,d_hat)
+
+    X = normal(rng, shape=[H,M], dtype=policy.sample_dtype)
+    for k in 0 .. n_flow-1:
+        tau = time_grid[k]
+        X[0:d_hat] = prefix[0:d_hat]
+        tau_token[:] = tau
+        tau_token[0:d_hat] = 1
+        V = policy_velocity(observation, X, tau_token)
+        require shape(V)=[H,M] and all_finite(V)
+        X = X + step_size[k] * V
+        record metadata-only step trace
+
+    if output_contract_requires_exact_prefix:
+        X[0:d_hat] = prefix[0:d_hat]
+    require shape(X)=[H,M] and all_finite(X)
+    return TrainedProposal(branch="training_time", contract_hash=handoff.contract_hash,
+                           checkpoint_capability_hash=capability_hash,
+                           delay_support_hash=support_hash,
+                           action_chunk_ref=artifact_ref)
+</code></pre></div></div>
+
+<p>每次 policy evaluation 前覆盖 prefix，确保模型看到 clean condition；Euler update 仍可能改动全部位置，所以最后一步之后 prefix 未必逐元素不变。RTC Runtime 会跳过已过期 prefix；若下游 API 要求完整返回块的 prefix 精确不变，可以在循环后再覆盖，但必须标作 output contract 增强，不改称论文核心算法。</p>
+
+<h3 id="每步-trace-验证-hard-condition-真的存在">每步 trace 验证 hard condition 真的存在</h3>
+
+<p>sampler step 至少记录 <code class="language-plaintext highlighter-rouge">tau</code>、prefix overwrite 前后差异、token-time digest、velocity/postfix norm、finite status 与 capability/contract hash。prefix overwrite 后，<code class="language-plaintext highlighter-rouge">X[0:d_hat]</code> 必须在容差内等于 source；policy evaluation 后可以产生全长 velocity，但下一 step 前再次覆盖。这样能定位 prefix 漂移发生在模型 update、adapter 还是 overwrite 漏失。</p>
+
+<p>不建议默认记录完整 action payload；digest、范围、范数和受控 artifact reference 足以做多数一致性审计。若为数值复现保存中间 tensor，必须绑定数据治理、保留期限和访问权限，不能写入普通应用日志。失败 trace 也要保存首个异常 step，而不是只留下最终 non-finite。</p>
+
+<p>time grid、step size、solver 与 <code class="language-plaintext highlighter-rouge">n_flow</code> 作为 sampler capability 一起保存。即使 checkpoint 支持 per-token time，更换 solver 也可能改变分布与 prefix 最终漂移；不能把同一 trained checkpoint 在任意积分器上的行为都归入原验证范围。</p>
+
+<p>输出 closure 检查包括 shape <code class="language-plaintext highlighter-rouge">[H,M]</code>、所有元素 finite、branch、checkpoint/support hash、authority epoch、prefix source digest 和 step count。任一项失败，整块 rejected；不删掉异常通道继续返回，也不把最后一个 finite 中间状态冒充完成结果。</p>
+
+<h3 id="输出仍是-proposalpostfix">输出仍是 proposal/postfix</h3>
+
+<p>Runtime 在 ready 后用 <code class="language-plaintext highlighter-rouge">d_meas</code>、merge 时刻、queue committed boundary、authority 与 safety gate 重算 valid suffix。<code class="language-plaintext highlighter-rouge">d_meas</code> 可能大于 <code class="language-plaintext highlighter-rouge">d_hat</code>，导致更多位置过期；trained conditioning 不替代 stale check，也不保证 support 内 proposal 一定可派发。</p>
+
+<p><code class="language-plaintext highlighter-rouge">status=rejected</code> 时 action ref 必须为空。取消、resource limit、non-finite、capability mismatch、alignment gap、authority stale 与 out-of-support 分别使用稳定 failure code；算法层不自动 retry，也不决定 hold/repeat/stop。</p>
+
+<h3 id="prefix-重写有三个常见误区">Prefix 重写有三个常见误区</h3>
+
+<p>第一，只在循环开始前覆盖一次。首个 Euler update 会改动 prefix，后续模型看到的不再是 clean condition；正确流程是在每次 policy evaluation 前重写。第二，把 prefix time 设成基础 <code class="language-plaintext highlighter-rouge">tau</code>，这让模型把已知动作当成带噪 Token。第三，把完整 old chunk 写入 <code class="language-plaintext highlighter-rouge">[0,d_hat)</code> 而不做绝对 tick join，可能把错误时刻的动作当条件。</p>
+
+<p>最后一次 update 后是否再覆盖取决于 output contract。RTC 通常不会派发过期 prefix，所以数值漂移不一定影响执行；但下游若计算完整块 hash、continuity metric 或期待 exact prefix，循环后覆盖能避免歧义。无论选择哪种，都在 sampler record 写 <code class="language-plaintext highlighter-rouge">final_prefix_overwrite=true/false</code>，不能依赖调用方猜测。</p>
+
+<p><code class="language-plaintext highlighter-rouge">d_meas&gt;d_hat</code> 时，训练条件只覆盖较短 prefix，而 Runtime 实际还要跳过更多位置。只要剩余 suffix 有效且 support/contract 允许，proposal 可能仍可使用；若 <code class="language-plaintext highlighter-rouge">d_meas&gt;=H</code> 或越过训练/部署门禁，则 reject。算法不能在结果返回后重新生成更长 prefix 而忽略 deadline 与新 observation。</p>
+
+<p>取消与 supersession 在 step 边界检查。旧 request 被新 observation 取代后，即使计算完成也返回 stale，不进入 merge；中间 sample 仅作受控诊断。自动 retry 要创建新 request、冻结新 contract 和 authority，不能复用旧 proposal ID。</p>
+
+<h2 id="branch-choice-runtime-handoff">与 Guided 的选择及 Runtime 交接</h2>
+
+<h3 id="同轴比较与选择条件">同轴比较与选择条件</h3>
+
+<div class="note-tbl il-method-matrix" tabindex="0" aria-label="Training-Time RTC 表格 4，与 Guided 同轴比较，可横向滚动">
+
+  <p>| 维度 | Training-Time（本页） | Guided（相关页） |
+| — | — | — |
+| 条件进入 | 训练时 prefix conditioning | 推理每步 guidance/VJP |
+| checkpoint | 必须有 verified trained capability | 兼容 iterative policy，通过 guidance gate |
+| 在线额外成本 | prefix overwrite + per-token time，无 Guided VJP | reverse-mode VJP 与 coefficient/mask |
+| 主要配置 | delay support/distribution、Loss normalization | Soft Mask、beta、solver/steps |
+| 主要风险 | exposure gap、support 漂移、普通 checkpoint 误用 | 数值不稳定、额外 latency、scale/time 错位 |
+| 图关系 | 与 Guided 平行，进入 Runtime | 与 Training-Time 平行，进入 Runtime |</p>
+</div>
+
+<p>只有既有 checkpoint 且无法重训练时，Guided 更可能可行；能控制训练、部署 delay 有稳定证据、吞吐又不允许 VJP 时，Training-Time 值得评估。两者都需要同一 Foundations contract 和 Runtime，不应以“新/旧”“高级/初级”排序。</p>
+
+<h3 id="切换分支必须改变-capability-证据">切换分支必须改变 capability 证据</h3>
+
+<p>同一 UI 里的 mode toggle 不能替代算法证据。切到 trained 时必须选择有 prefix capability 的 checkpoint、support 和 Loss lineage；切到 guided 时要验证 iterative sampler、VJP、mask 与 coefficient。共同的 Action ABI/Runtime contract 可以复用，但分支特有字段不能残留或静默默认。</p>
+
+<p>比较两条路线要固定 observation、task、controller、safety、Action ABI、solver 与基础 checkpoint lineage，并同时测 model compute、VJP/overwrite、end-to-end usable latency、valid suffix、task outcome 和 safety intervention。只比 forward time 会漏掉 queue 与验证；只比成功率会漏掉额外计算和风险。</p>
+
+<p>两条路线都可失败。Guided 可能数值不稳定或太慢；trained 可能 exposure gap、support drift 或 checkpoint 不兼容。Runtime 的 fallback 图应基于已验证能力与当前状态，而不是把另一分支假定为永远可用；两者都不可用时应进入声明的 safe path。</p>
+
+<p>handoff 后仍保留 <code class="language-plaintext highlighter-rouge">branch=training_time</code>、checkpoint/support hash 与 source prefix provenance，使 Experiments/Phenomena 能区分故障来自模型训练、delay gate、Runtime merge 还是 safety rewrite。汇合不是抹去分支身份。</p>
+
+<div class="rtct-route">
+  <article><h3>继续 trained 主路径</h3>
+<p>携带 checkpoint capability、delay support、Loss lineage、contract 与 finite evidence，把 proposal 交给 Runtime。</p>
+<nav aria-label="Training-Time 主路径"><a href="/knowledge/imitation-learning/vla/rtc/runtime/">将 trained proposal 接入异步队列与安全执行</a></nav></article>
+  <article><h3>横向比较 Guided</h3>
+<p>当不能训练 compatible checkpoint，或要用已有 iterative policy 做 inference-time 条件化时比较。</p>
+<nav aria-label="Guided 横向路线"><a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/">比较不重训练的 Guided 路线</a></nav></article>
+</div>
+
+<h3 id="runtime-handoff">Runtime handoff</h3>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">rtc_trained_proposal</span><span class="pi">:</span>
+  <span class="na">schema</span><span class="pi">:</span> <span class="s">rtc.training-time.proposal/v1</span>
+  <span class="na">status</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;ready|rejected&gt;"</span>
+  <span class="na">branch</span><span class="pi">:</span> <span class="s">training_time</span>
+  <span class="na">request_id</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque&gt;"</span>
+  <span class="na">observation_id</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque&gt;"</span>
+  <span class="na">proposal_id</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque|null&gt;"</span>
+  <span class="na">action_chunk_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref|null&gt;"</span>
+  <span class="na">contract_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">checkpoint_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">checkpoint_capability_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">delay_support_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">action_abi_hash</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;sha256&gt;"</span>
+  <span class="na">authority_epoch</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;opaque&gt;"</span>
+  <span class="na">d_hat</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int&gt;"</span>
+  <span class="na">d_meas</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;int|null-before-ready&gt;"</span>
+  <span class="na">prefix_source_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+  <span class="na">finite_status</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;pass|fail&gt;"</span>
+  <span class="na">failure_code</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;enum|null&gt;"</span>
+  <span class="na">sampler_record_ref</span><span class="pi">:</span> <span class="s2">"</span><span class="s">&lt;artifact-ref&gt;"</span>
+</code></pre></div></div>
+
+<p>Runtime 必须重查 stale job、support、实测 delay、valid suffix、queue、shape/finite、authority 与 safety。Training-Time 只通过 related link 比较 Guided，不把 Guided 写进 next/prerequisite；本页主后继唯一是 Runtime。</p>
+
+<h3 id="从-request-到-feedback-的状态链">从 request 到 feedback 的状态链</h3>
+
+<p>request created 时冻结 observation、<code class="language-plaintext highlighter-rouge">d_hat</code>、checkpoint capability、support、contract 和 authority；sampler started/ready 分别记录实际开始与结果时刻；Runtime validated/merge committed 再决定 valid suffix；dispatch/ack/feedback 由 controller 事件完成。任何阶段都不能用后一个状态回写覆盖前一个状态。</p>
+
+<p>ready 之前若 authority、checkpoint allowlist、processor 或 Action ABI 版本变化，job 标 stale。ready 之后若 <code class="language-plaintext highlighter-rouge">d_meas</code>、queue committed boundary 或 safety gate 使 suffix 无效，proposal 标 rejected/expired。两种拒绝原因不同：前者说明 request 上下文失效，后者说明结果不再可用；监控和重试策略也应区分。</p>
+
+<p>若 Runtime 选择 alternate Guided branch 或 fallback，新 request 使用新 branch record 与 proposal ID，不能把 trained failure code 丢掉，也不能让 fallback 成功覆盖原失败。事件链保留最终 authority，便于 Experiments 按“提出者、接纳者、执行者”归因。</p>
+
+<p>feedback 进入下一轮 prefix provenance 时，需要说明它是 command echo、controller state 还是物理传感状态。它们时延与语义不同，不能统一命名 executed action。缺少可对齐反馈时，使用 committed/dispatched source 并保留 evidence scope，不伪造更强事实。</p>
+
+<h2 id="evidence-validation">证据、验证与完成检查</h2>
+
+<h3 id="来源登记与版本边界">来源登记与版本边界</h3>
+
+<div class="note-tbl il-method-matrix" tabindex="0" aria-label="Training-Time RTC 表格 5，来源与证据边界，可横向滚动">
+
+  <p>| 来源 | 支持范围 | 标签 / 边界 |
+| — | — | — |
+| <a href="https://arxiv.org/abs/2512.05964" rel="external nofollow noopener" target="_blank">Training-Time RTC v2</a> | 方法、样本、Loss、实验与 limitation | 原论文事实；记录版本 2025-12-09 |
+| <a href="https://github.com/Physical-Intelligence/real-time-chunking-kinetix/blob/9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b/src/model.py" rel="external nofollow noopener" target="_blank">固定 Kinetix model.py</a> | prefix mask、delay 分布、Loss 与 trained sampler 映射 | 官方实现事实；仅此 commit |
+| <a href="https://github.com/Physical-Intelligence/real-time-chunking-kinetix" rel="external nofollow noopener" target="_blank">Kinetix 仓库</a> | 官方模拟代码与 README | <code class="language-plaintext highlighter-rouge">main</code> 易变；不代表私有 VLA 配方 |
+| <a href="https://huggingface.co/docs/lerobot/main/rtc" rel="external nofollow noopener" target="_blank">LeRobot RTC</a> | 当前 trained/guided 模式线索 | 官方文档；<code class="language-plaintext highlighter-rouge">main</code> 易变，非论文定义 |
+| <a href="https://arxiv.org/abs/2210.02747" rel="external nofollow noopener" target="_blank">Flow Matching</a> | 基础路径与速度背景 | 训练推导下沉公共页 |
+| <a href="/knowledge/imitation-learning/vla/foundations/training-adaptation/">公共训练与适配</a> | lineage、发布与回滚 contract | 站内公共工程边界 |</p>
+</div>
+
+<p>只使用 <code class="language-plaintext highlighter-rouge">原论文事实</code>、<code class="language-plaintext highlighter-rouge">官方实现事实</code>、<code class="language-plaintext highlighter-rouge">方法迁移</code>、<code class="language-plaintext highlighter-rouge">工程建议</code>、<code class="language-plaintext highlighter-rouge">待验证假设</code> 五类标签。固定代码行为不能倒写成论文定义；absolute tick join、capability gate、typed error 与 Runtime handoff 属于方法迁移/工程建议；跨模型训练超参、性能收益与 safety 结论均待验证。</p>
+
+<h3 id="property-tests-与负面门禁">Property tests 与负面门禁</h3>
+
+<p>对 <code class="language-plaintext highlighter-rouge">B/H/M</code> 小网格与全部合法 <code class="language-plaintext highlighter-rouge">d_b</code>，验证 prefix/postfix 互补、padding/channel 合成、token time、input endpoint、target sign、Loss 分子/分母、不同归一化尺度、permutation 与 zero-denominator rejection。用解析常速度模型验证训练 target 与 sampler 方向，用 frozen checkpoint 验证 per-token interface 不被塌缩。</p>
+
+<p>负面测试包括：普通 checkpoint 伪装 trained、support 缺失、<code class="language-plaintext highlighter-rouge">d_hat</code> 越界、<code class="language-plaintext highlighter-rouge">d_meas</code> 事后越界、authority change、ABI/normalization mismatch、全 padding、空 postfix、NaN before mask、prefix future leakage 和 <code class="language-plaintext highlighter-rouge">status=rejected</code> 携带 action ref。任一关键门禁失败都不得进入 merge。</p>
+
+<h3 id="完成条与返回路径">完成条与返回路径</h3>
+
+<ul class="rtct-checks">
+  <li>我能构造 <code>[B,H,M]</code> 样本并区分 batch、动作时间与通道轴。</li>
+  <li>我能解释 clean prefix、noisy postfix、per-token time 与 exposure gap。</li>
+  <li>我能从路径导数审计 target sign，不凭变量名猜方向。</li>
+  <li>我能区分四种 Loss normalization，并复算分子、分母与梯度尺度。</li>
+  <li>我能定义 delay support/distribution，识别 out-of-support 与 distribution shift。</li>
+  <li>我会验证 checkpoint capability/lineage，不把普通 checkpoint 切换成 trained。</li>
+  <li>我会把 trained 结果作为 proposal 交给 Runtime，而不是直接 dispatch。</li>
+</ul>
+
+<nav class="note-nav" aria-label="Training-Time RTC 下一步">
+  <a href="/knowledge/imitation-learning/vla/rtc/foundations/">返回 RTC Foundations</a>
+  <a href="/knowledge/imitation-learning/vla/rtc/runtime/">将 trained proposal 接入异步队列与安全执行</a>
+  <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/">横向比较 Guided</a>
+  <a href="/knowledge/imitation-learning/vla/rtc/">返回 RTC Overview</a>
+</nav>
+
+<p>页面完成只表示训练语义、公式、schema 与静态校验准备就绪；尚未安装到源站、构建或浏览器验收，也没有运行训练、模型、仿真、机器人、上传或用户未要求的备份。</p>
+
+<h3 id="可带走的静态验收产物">可带走的静态验收产物</h3>
+
+<p>本页交付 sample contract、token-time/mask worksheet、sign audit、Loss normalization record、delay support manifest、training lineage、checkpoint capability、trained sampler record 与 Runtime handoff。每份制品都有版本、hash、owner、证据 scope 与 unknown/rejected 状态；不能只交一个 checkpoint 文件。</p>
+
+<p>审阅者随机选择一个 <code class="language-plaintext highlighter-rouge">d=0</code>、一个中间 delay、一个接近 support 上界和一个非法样本，手算 prefix/postfix、token time、有效 mask 与 Loss 分母；再从 ready proposal 反查 checkpoint、run、数据 release 和 source prefix。任何链条依赖口头解释、临时 notebook 状态或未保存配置，都不能称为可复现。</p>
+
+<p>可安全复用的是符号、schema、检查表和证据边界；不可直接复用的是论文/实现示例 delay、训练 epoch、optimizer、控制率或设备阈值。后续构建若暴露公式渲染、窄屏、SVG ID 或链接问题，只修正展示与 contract 一致性，不扩展到实际训练或真机执行。</p>
+
+<p>最终结论必须同时列出适用范围与失败出口：checkpoint 只在声明的 Action ABI、时间方向、horizon、delay support、processor 和 evaluation protocol 下具备 trained capability；超出任一范围时状态回到 unknown 或 rejected，由 Runtime 选择已验证替代路线。不能因为文件可加载、单个离线 Loss 下降或一次任务成功，就扩大 capability claim。所有待定项保留到后续证据补齐，不用默认值填空。</p>
+
+<p>交付者还需明确谁有权改变 support、发布新 checkpoint、批准部署 allowlist 和触发回滚；这些 owner 与审批记录属于 capability 的一部分。缺少责任人或回滚制品时，即使数学与静态测试全部通过，也只能停留在研究候选状态，不能进入受控部署路径。
+所有范围缺口、失败样本、未知状态和待验证假设必须保持可见，并进入下一轮复核记录。</p>
+
+<h3 id="发布前的四层复核">发布前的四层复核</h3>
+
+<p>数据层检查 split、future leakage、padding/channel validity、delay sampling 与 exposure gap；数学层检查 token time、path/target sign、Mask 与 Loss 分母；制品层检查 checkpoint lineage、processor/ABI/normalization 和 capability；系统层检查 <code class="language-plaintext highlighter-rouge">d_hat/d_meas</code>、authority、Runtime handoff 与 Safety。四层分别记录，不用一个“训练通过”勾号代替。</p>
+
+<p>结论状态使用 <code class="language-plaintext highlighter-rouge">verified</code>、<code class="language-plaintext highlighter-rouge">verified_with_scope</code>、<code class="language-plaintext highlighter-rouge">pending_version_lock</code>、<code class="language-plaintext highlighter-rouge">not_applicable</code> 与 <code class="language-plaintext highlighter-rouge">rejected</code>。论文方法可在 v2 scope 下 verified；LeRobot <code class="language-plaintext highlighter-rouge">main</code> 行为只能 pending_version_lock；没有真实测量的系统吞吐必须 pending，不能因静态公式正确而写成“实时”。</p>
+
+<p>负面空间也要审阅：没有把 Kinetix 数值写成通用配方，没有把 ordinary checkpoint 当 trained，没有把 <code class="language-plaintext highlighter-rouge">d=0</code> Loss 称为数值完全相同，没有把 support 内写成安全保证，没有把 proposal 写成 executed，也没有提供真实命令、账号、路径、端口或设备参数。</p>
+
+<p>交付报告列源 hash、覆盖稿 hash、正式 patch hash、专页 checker、全量回归和未完成的构建/浏览器验收。所有 unknown/rejected/pending 项保持可见，不为追求全绿删去失败样本、缩小检查范围或改写来源结论。</p>
+
+  </article>
+
+  
+
+  
+    
+
+
+  
+</div>
+</div>
+          </div>
+        
+      
+    </div>
+
+    <!-- Footer -->
+    
+
+
+  <footer class="fixed-bottom" role="contentinfo">
+    <div class="container mt-0">
+      
+  © Copyright 2026
+  DDS
+  
+  . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>.
+
+  
+  
+
+    </div>
+  </footer>
+
+
+
+    <!-- JavaScripts -->
+    <script>
   window.alFolio = {
     compatBootstrap: false
   };
-</script> <script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script> <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script> <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script> <script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script> <script src="/assets/al_math/js/mathjax-setup.js"></script> <script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script> <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script> <script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script> <script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script> <script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script> <script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script> <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script> <script async src="https://badge.dimensions.ai/badge.js"></script> <script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script> <script defer src="/assets/al_img_tools/js/zoom.js"></script> <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script> <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script> <script>
+</script>
+
+<!-- Core navigation/runtime scripts -->
+<script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script>
+
+
+
+  <!-- Masonry & imagesLoaded -->
+  <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script>
+  <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script>
+
+
+
+  <!-- Charts and Diagrams -->
+  
+
+
+
+
+
+
+
+  <!-- Math and Tikzjax -->
+  
+<script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script>
+<script src="/assets/al_math/js/mathjax-setup.js"></script>
+
+
+
+
+
+<!-- Tooltips & popovers runtime -->
+<script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script>
+
+
+
+
+
+  <!-- Tocbot -->
+  <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script>
+
+
+<!-- Load Common JS -->
+<script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script>
+<script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script>
+<script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script>
+
+<!-- Jupyter Open External Links New Tab -->
+<script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script>
+
+<!-- Badges -->
+
+  <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
+
+
+  <script async src="https://badge.dimensions.ai/badge.js"></script>
+
+
+
+
+  <!-- Analytics -->
+  
+
+
+
+
+
+  <!-- Image Features -->
+  
+<!-- Medium Zoom JS -->
+<script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script>
+<script defer src="/assets/al_img_tools/js/zoom.js"></script>
+
+
+
+
+
+  <!-- Scrolling Progress Bar -->
+  <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script>
+
+
+
+
+
+  <!-- Back to Top -->
+  
+  
+  
+    <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script>
+  
+  <script>
     addBackToTop();
-  </script> <script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script> <ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys> <script src="/assets/al_search/js/search-setup.js"></script> <script>
+  </script>
+
+
+
+  <!-- Search -->
+  
+    
+<script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script>
+<ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys>
+<script src="/assets/al_search/js/search-setup.js"></script>
+<script>
 // get the ninja-keys element
 const ninja = document.querySelector('ninja-keys');
 
@@ -721,7 +3555,7 @@ ninja.data = [{
         title: 'email',
         section: 'Socials',
         handler: () => {
-          window.open("mailto:%79%6F%75@%65%78%61%6D%70%6C%65.%63%6F%6D", "_blank");
+          window.open("#", "_blank");
         },
       },{
         id: 'social-inspire',
@@ -779,4 +3613,14 @@ ninja.data = [{
       },
     },];
 
-</script> <script src="/assets/al_search/js/shortcut-key.js"></script> </body> </html>
+</script>
+<script src="/assets/al_search/js/shortcut-key.js"></script>
+
+
+  
+
+
+
+
+  </body>
+</html>

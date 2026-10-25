@@ -1,10 +1,1167 @@
-<!DOCTYPE html> <html lang="zh-CN"> <head> <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"> <meta http-equiv="X-UA-Compatible" content="IE=edge"> <title> Monte Carlo：预测、控制与重要性采样 | DDS </title> <meta name="author" content="DDS "> <meta name="description" content="从完整 episode 的回报样本学习价值：first-visit 与 every-visit、增量估计、on-policy MC control、off-policy importance sampling、覆盖与方差诊断，以及截断边界的正确处理。"> <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作"> <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;"> <style>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <!-- Head -->
+  <head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <!-- Metadata, OpenGraph and Schema.org -->
+
+
+
+
+<!-- Standard metadata -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>
+  
+  
+    
+      Monte Carlo：预测、控制与重要性采样 | DDS 
+    
+  
+</title>
+<meta name="author" content="DDS ">
+<meta name="description" content="从完整 episode 的回报样本学习价值：first-visit 与 every-visit、增量估计、on-policy MC control、off-policy importance sampling、覆盖与方差诊断，以及截断边界的正确处理。">
+
+  <meta name="keywords" content="具身智能, 视觉语言动作模型, VLA, 强化学习, 机器人学习, 遥操作">
+
+
+
+
+
+
+
+
+
+
+<!-- Security: Content Security Policy -->
+<!-- Permissive CSP suitable for academic websites. Allows external images, videos, and common embed services. -->
+<!-- To customize for your needs, see: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; media-src 'self' https:; frame-src 'self' https:; connect-src 'self' https:;">
+<style>
   :root {
     --max-content-width: 930px;
   }
-</style> <link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous"> <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous"> <link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap"> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light"> <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;"> <link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711"> <link rel="canonical" href="https://dds131.github.io/knowledge/reinforcement-learning/monte-carlo/"> <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script> <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark"> <script>
+</style>
+
+<!-- Tailwind-first core styles -->
+<link rel="stylesheet" href="/assets/css/tailwind.css?v=50c64c15cbb9fd1ce6056fdb8bcb4b62">
+
+
+
+
+
+
+  <!-- Tocbot -->
+  <link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.css" integrity="sha256-zTN0r+0OKaIv2xqeNNIYxNk0pWJ6+IqPGc1iDgVzWF0=" crossorigin="anonymous">
+
+
+<!-- Icons -->
+
+  
+<!-- Font Awesome -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.2.0/css/all.min.css" integrity="sha256-MVopmdyC2tYTiJ8wlktf0uh0v4NgT+vNdyVFepi7Q0c=" crossorigin="anonymous">
+
+<!-- Academicons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/academicons@1.9.5/css/academicons.min.css" integrity="sha256-SzrCOBJbGVFMahewkgjwnApaV2+av1DwMAA+/QGLyZw=" crossorigin="anonymous">
+
+<!-- Scholar Icons -->
+<link defer rel="stylesheet" href="https://cdn.jsdelivr.net/npm/scholar-icons@1.0.3/css/scholar-icons.css" integrity="sha256-VY3hHVj/hNX3fYG6wtbA6TcKJQl7+FthzGSyIB64klY=" crossorigin="anonymous">
+
+
+
+<link defer rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Roboto+Slab:100,300,400,500,700|Material+Icons&amp;display=swap">
+
+<!-- Code Syntax Highlighting -->
+<link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-github.css?v=591dab5a4e56573bf4ef7fd332894c99" media="" id="highlight_theme_light">
+
+<!-- Styles -->
+
+
+
+
+  <link rel="shortcut icon" href="data:image/svg+xml,&lt;svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22&gt;&lt;text%20y=%22.9em%22%20font-size=%2290%22&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+
+<link rel="stylesheet" href="/assets/css/main.css?v=b7e280e57e2bc547c94fb59c914ff711">
+
+<link rel="canonical" href="https://dds131.github.io/knowledge/reinforcement-learning/monte-carlo/">
+
+
+  <!-- Dark Mode -->
+  <script src="/assets/js/theme.js?v=7af685e2ba20b37fef545c97b8064050"></script>
+  <link defer rel="stylesheet" href="/assets/css/jekyll-pygments-themes-native.css?v=5847e5ed4a4568527aa6cfab446049ca" media="none" id="highlight_theme_dark">
+  <script>
     initTheme();
-  </script> </head> <body class="fixed-top-nav "> <header> <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation"> <div class="container"> <a class="navbar-brand title font-weight-lighter" href="/"> <span class="font-weight-bold">DDS</span> </a> <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar top-bar"></span> <span class="icon-bar middle-bar"></span> <span class="icon-bar bottom-bar"></span> </button> <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav"> <ul class="navbar-nav navbar-menu-list flex-nowrap"> <li class="nav-item "> <a class="nav-link" href="/">关于 </a> </li> <li class="nav-item "> <a class="nav-link" href="/blog/">blog </a> </li> <li class="nav-item "> <a class="nav-link" href="/publications/">publications </a> </li> <li class="nav-item "> <a class="nav-link" href="/projects/">projects </a> </li> <li class="nav-item "> <a class="nav-link" href="/repositories/">repositories </a> </li> <li class="nav-item "> <a class="nav-link" href="/cv/">CV </a> </li> <li class="nav-item "> <a class="nav-link" href="/teaching/">teaching </a> </li> <li class="nav-item "> <a class="nav-link" href="/people/">people </a> </li> <li class="nav-item dropdown "> <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus </a> <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown"> <a class="dropdown-item " href="/books/">bookshelf</a> <div class="dropdown-divider"></div> <a class="dropdown-item " href="/blog/">blog</a> </div> </li> <li class="nav-item active"> <a class="nav-link" href="/knowledge/">knowledge <span class="sr-only">(current)</span> </a> </li> <li class="nav-item"> <button id="search-toggle" type="button" title="Search" aria-label="Open search"> <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span> </button> </li> <li class="toggle-container"> <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme"> <i class="fa-half-sun-moon" id="light-toggle-system"></i> <i class="fa-solid fa-moon" id="light-toggle-dark"></i> <i class="fa-solid fa-sun" id="light-toggle-light"></i> </button> </li> </ul> </div> </div> </nav> <progress id="progress" value="0"> <div class="progress-container"> <span class="progress-bar"></span> </div> </progress> </header> <div class="container mt-5" role="main"> <div class="row"> <div class="col-sm-3"> <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="2"></nav> </div> <div class="col-sm-9"> <div class="post"> <header class="post-header"> <h1 class="post-title">Monte Carlo：预测、控制与重要性采样</h1> <p class="post-description">从完整 episode 的回报样本学习价值：first-visit 与 every-visit、增量估计、on-policy MC control、off-policy importance sampling、覆盖与方差诊断，以及截断边界的正确处理。</p> </header> <article> <style>
+  </script>
+
+
+
+
+
+
+
+  <!-- Image Features -->
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+  </head>
+
+  <!-- Body -->
+  <body class="fixed-top-nav ">
+    <!-- Header -->
+    <header>
+  <!-- Nav Bar -->
+  <nav id="navbar" class="navbar navbar-light navbar-expand-sm fixed-top" role="navigation">
+    <div class="container">
+      
+        <a class="navbar-brand title font-weight-lighter" href="/">
+          
+            
+              <span class="font-weight-bold">DDS</span>
+            
+            
+            
+          
+        </a>
+      
+      <!-- Navbar Toggle -->
+      <button class="navbar-toggler collapsed navbar-toggler-main" type="button" data-nav-toggle="navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar top-bar"></span>
+        <span class="icon-bar middle-bar"></span>
+        <span class="icon-bar bottom-bar"></span>
+      </button>
+
+      <div class="collapse navbar-collapse navbar-collapse-main" id="navbarNav">
+        <ul class="navbar-nav navbar-menu-list flex-nowrap">
+          
+
+          <!-- About -->
+          <li class="nav-item ">
+            <a class="nav-link" href="/">关于
+              
+            </a>
+          </li>
+
+          <!-- Other pages -->
+          
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/blog/">blog
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/publications/">publications
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/projects/">projects
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/repositories/">repositories
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/cv/">CV
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/teaching/">teaching
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item ">
+                  <a class="nav-link" href="/people/">people
+                    
+                  </a>
+                </li>
+              
+            
+          
+            
+              
+                
+                
+                <li class="nav-item dropdown ">
+                  <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-nav-dropdown-toggle="true" aria-haspopup="true" aria-expanded="false">submenus
+                    
+                  </a>
+                  <div class="dropdown-menu dropdown-menu-right" aria-labelledby="navbarDropdown">
+                    
+                      
+                        <a class="dropdown-item " href="/books/">bookshelf</a>
+                      
+                    
+                      
+                        <div class="dropdown-divider"></div>
+                      
+                    
+                      
+                        <a class="dropdown-item " href="/blog/">blog</a>
+                      
+                    
+                  </div>
+                </li>
+              
+            
+          
+            
+              
+                
+                <li class="nav-item active">
+                  <a class="nav-link" href="/knowledge/">knowledge
+                    
+                      <span class="sr-only">(current)</span>
+                    
+                  </a>
+                </li>
+              
+            
+          
+          
+            <!-- Search -->
+            <li class="nav-item">
+              <button id="search-toggle" type="button" title="Search" aria-label="Open search">
+                <span class="nav-link">ctrl k <i class="fa-solid fa-magnifying-glass"></i></span>
+              </button>
+            </li>
+          
+          
+            <!-- Toogle theme mode -->
+            <li class="toggle-container">
+              <button id="light-toggle" type="button" title="Change theme" aria-label="Change color theme">
+                <i class="fa-half-sun-moon" id="light-toggle-system"></i>
+                <i class="fa-solid fa-moon" id="light-toggle-dark"></i>
+                <i class="fa-solid fa-sun" id="light-toggle-light"></i>
+              </button>
+            </li>
+          
+        </ul>
+      </div>
+    </div>
+  </nav>
+  
+    <!-- Scrolling Progress Bar -->
+    <progress id="progress" value="0">
+      <div class="progress-container">
+        <span class="progress-bar"></span>
+      </div>
+    </progress>
+  
+</header>
+
+
+    <!-- Content -->
+    <div class="container mt-5" role="main">
+      
+        
+        
+        
+          <div class="row">
+            <!-- sidebar, which will move to the top on a small screen -->
+            <div class="col-sm-3">
+              <nav id="toc-sidebar" class="sticky-top toc toc-sidebar" aria-label="Table of contents" data-toc-collapse="expanded" data-toc-collapse-depth="2"></nav>
+            </div>
+            <!-- main content area -->
+            <div class="col-sm-9">
+
+<div class="post">
+  <header class="post-header">
+    <h1 class="post-title">Monte Carlo：预测、控制与重要性采样</h1>
+    <p class="post-description">从完整 episode 的回报样本学习价值：first-visit 与 every-visit、增量估计、on-policy MC control、off-policy importance sampling、覆盖与方差诊断，以及截断边界的正确处理。</p>
+  </header>
+
+  <article>
+    
+<style>
   /* ---- 左侧栏容器：整体 sticky，内部两块各自独立滚动 ----------------------
    主题自带的 #toc-sidebar 本来带 .sticky-top，两个 sticky 兄弟元素会互相遮挡，
    所以由 JS 摘掉它的 .sticky-top，改为由本容器统一 sticky。 */
@@ -165,7 +1322,845 @@
       max-height: 40vh;
     }
   }
-</style> <div id="note-side"> <details id="note-tree" open=""> <summary>知识库目录</summary> <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp"> <summary> ⓪ 深度学习基础<span class="n">2</span> </summary> <ul> <li> <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a> </li> <li> <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a> </li> <li> <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a> </li> </ul> </details><details class="note-tree-grp"> <summary> ① 模仿学习与 VLA<span class="n">146</span> </summary> <ul> <li> <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a> </li> <li> <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul> <li> <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a> </li> <li> <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a> </li> <li> <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z（含 AE 与 VAE）">CVAE 与隐变量</a> </li> <li> <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a> </li> <li> <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling">时间集成</a> </li> <li> <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练目标与超参">训练目标与超参</a> </li> <li> <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与局限">实验消融与局限</a> </li> <li> <a href="/knowledge/imitation-learning/act/network/" title="ACT · 网络模型逐模块拆解">网络模型拆解</a> </li> <li> <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Transformer 层内实现">Transformer 层内</a> </li> <li> <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 能力边界与证据分层">能力边界与证据分层</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向约定与推理期现象">时间方向与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界泛化与数据配方">开放世界与数据配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI 源码剖析">OpenPI 源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现的差异及推理期现象">论文与实现的差异</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 分布式价值函数">分布式价值函数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · 演进对比与开源复现现状">演进对比与开源复现现状</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 源码映射与工程复现路线">源码映射与工程复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练流程、Loss 与公开边界">数据训练与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss">Training-Time RTC</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/" title="HG-DAgger：Human-Gated DAgger">HG-DAgger</a><ul> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/foundations/" title="HG-DAgger · 从 BC 到人工门控数据聚合">问题与方法谱系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/intervention/" title="HG-DAgger · 人工门控、接管与恢复轨迹">人工门控与恢复轨迹</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/risk/" title="HG-DAgger · Ensemble Doubt 与风险阈值">Doubt 与风险阈值</a> </li> <li> <a href="/knowledge/imitation-learning/vla/hg-dagger/vla-pipeline/" title="HG-DAgger · VLA 数据、Loss 与迭代部署">VLA 数据与训练</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a> </li> <li> <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 token 组织">网络架构与 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示、损失与「论文 ≠ 实现」">动作表示与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与迁移到自己的机械臂">推理部署与迁移</a> </li> <li> <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a> </li> <li> <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作、深层 DiT 与多本体基础模型">GR00T N1.6</a><ul> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 AlternateVLDiT">架构增量与图文分流</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作、统计量与训练数据">相对动作与数据</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、时间方向与 Loss">Flow Matching 与 Loss</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 训练流程、优化配置与迭代策略">训练、优化与迭代</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 四步推理、RTC 与异常排查">推理与异常排查</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a> </li> </ul> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析">官方源码剖析</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与涌现现象">推理与涌现现象</a> </li> <li> <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a> </li> </ul> </li> </ul> </li> </ul> </details><details class="note-tree-grp"> <summary> ② 强化学习<span class="n">88</span> </summary> <ul> <li> <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a> </li> <li class="part">第一部分 · 基础</li> <li> <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a> </li> <li> <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a> </li> <li> <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a> </li> <li> <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a> </li> <li> <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a> </li> <li class="part">第二部分 · 进阶</li> <li> <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a> </li> <li> <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a> </li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul> <li> <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a> </li> <li> <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a> </li> <li> <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul> <li> <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul> <li> <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a> </li> <li class="part">第三部分 · 前沿</li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul> <li> <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a> </li> <li> <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul> <li> <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a> </li> <li> <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a> </li> </ul> </li> <li> <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a> </li> <li> <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a> </li> <li> <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a> </li> <li> <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a> </li> <li> <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a> </li> <li> <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a> </li> </ul> </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details> </div> <script>
+</style>
+
+<div id="note-side">
+  <details id="note-tree" open="">
+    <summary>知识库目录</summary>
+    <a href="/knowledge/" title="知识库首页">知识库首页</a><details class="note-tree-grp">
+          <summary>
+            ⓪ 深度学习基础<span class="n">2</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/foundations/" title="深度学习基础">深度学习基础总览</a>
+            </li>
+<li>
+                <a href="/knowledge/foundations/attention/" title="注意力机制">注意力机制</a>
+</li>
+<li>
+                <a href="/knowledge/foundations/positional-encoding/" title="位置编码">位置编码</a>
+</li>
+</ul>
+        </details><details class="note-tree-grp">
+          <summary>
+            ① 模仿学习与 VLA<span class="n">167</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/imitation-learning/" title="模仿学习">模仿学习总览</a>
+            </li>
+<li>
+                <a href="/knowledge/imitation-learning/behavior-cloning/" title="Behavior Cloning：监督目标、分布漂移与失效诊断">Behavior Cloning</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/dagger/" title="DAgger：数据聚合、策略诱导分布与在线模仿">DAgger</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/hg-dagger/" title="HG-DAgger：人工门控的数据聚合">HG-DAgger</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/foundations/" title="HG-DAgger Foundations：人工门控、允许集与恢复数据">Foundations</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/intervention/" title="HG-DAgger Intervention：人类干预与控制权状态机">Intervention</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/risk/" title="HG-DAgger Risk：风险信号、阈值与失效处理">Risk</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/hg-dagger/vla-pipeline/" title="HG-DAgger VLA Pipeline：从干预数据到受控发布">VLA Pipeline</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/act/" title="ACT：动作分块 Transformer">ACT</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/act/background/" title="ACT · 问题背景与路线选择">问题背景</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/action-chunking/" title="ACT · 动作分块 Action Chunking">动作分块</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/cvae/" title="ACT · CVAE 与隐变量 z">CVAE 与隐变量</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/transformer/" title="ACT · DETR-style Transformer">DETR-style Transformer</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/training/" title="ACT · 训练流程、损失与验证">训练流程、损失与验证</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/temporal-ensembling/" title="ACT · Temporal Ensembling 时间集成">时间集成</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/experiments/" title="ACT · 实验、消融与证据边界">实验、消融与证据边界</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/limits/" title="ACT · 局限、证据边界与后续选型">局限与后续选型</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/source-code/" title="ACT · 官方源码导读与调用链">官方源码与调用链</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network/" title="ACT Network · 模块、张量接口与数据流">Network模块与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/network-analysis/" title="ACT Network Analysis · 形状、参数、算量与梯度">Network Analysis</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/attention/" title="ACT · Attention 内部机制">Attention内部机制</a>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/act/reproduction/" title="ACT · 复现指南与工程验收">复现指南与工程验收</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/generative-action-models/" title="生成式动作模型：Regression、CVAE、Diffusion 与 Flow Matching">生成式动作模型</a>
+</li>
+<li>
+                <a href="/knowledge/imitation-learning/vla/" title="VLA：视觉-语言-动作模型">VLA 总览</a><ul>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/foundations/" title="VLA 公共基础：从观测到安全执行">公共基础</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/robotics-control/" title="VLA 公共基础 · 机器人学、坐标系与控制接口">机器人学与控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/vlm-grounding/" title="VLA 公共基础 · VLM 骨干、具身与空间 Grounding">VLM 与 Grounding</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/action-representations/" title="VLA 公共基础 · 动作空间、Token、Diffusion 与 Flow">动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/data-cross-embodiment/" title="VLA 公共基础 · 数据工程、Co-training 与跨本体">数据与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/model-lineage/" title="VLA 公共基础 · 奠基模型与创新谱系">模型谱系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/training-adaptation/" title="VLA 公共基础 · 预训练、Co-training、微调与持续适配">训练与适配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/long-horizon/" title="VLA 公共基础 · 长时序规划、记忆与世界模型">长时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/evaluation-benchmarks/" title="VLA 公共基础 · 统一评测、Benchmark 与失败分类">统一评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/realtime-deployment/" title="VLA 公共基础 · 实时部署、效率与机器人系统接口">实时部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/foundations/safety-reliability/" title="VLA 公共基础 · 安全、可靠性与人在回路">安全可靠性</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-0/" title="π0：Flow Matching 视觉-语言-动作模型">π0</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/time-convention/" title="π0 · 时间方向、论文版本与推理期现象">时间方向与论文版本</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/architecture/" title="π0 · 网络架构与双专家">网络架构与双专家</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/flow-matching/" title="π0 · Flow Matching 动作生成">Flow Matching</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/training/" title="π0 · 训练流程与优化配置">训练与优化配置</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/experiments/" title="π0 · 实验、延迟与局限">实验与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-0/source-code/" title="π0 · 官方源码地图、调用链与复现审计">官方源码与复现审计</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-05/" title="π0.5：开放世界泛化">π0.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/vs-pi0/" title="π0.5 · 从 π0 到 π0.5 的演进对比">从 π0 到 π0.5 的演进</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/open-world/" title="π0.5 · 开放世界数据、评测与消融">开放世界数据与评测</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/architecture/" title="π0.5 · 网络架构与结构差异">网络架构与结构差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/knowledge-insulation/" title="π0.5 · 知识隔离与梯度干扰">知识隔离与梯度干扰</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/training-recipe/" title="π0.5 · 两阶段训练与组合损失">两阶段训练与组合损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/hierarchical-inference/" title="π0.5 · 分层推理与长时程执行">分层推理与长时程执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/discrepancies/" title="π0.5 · 论文与实现差异">论文与实现差异</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-05/source-code/" title="π0.5 · OpenPI源码剖析">OpenPI源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-06/" title="π0.6 与 RECAP：从经验中学习">π0.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/evolution/" title="π0.6 · π0到π0.6演进与开源复现">演进与开源复现边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/architecture/" title="π0.6 · 基座网络架构与输入输出">基座网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/base-training/" title="π0.6 · 基座训练目标与知识隔离">基座训练目标与知识隔离</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/recap/" title="π0.6 · RECAP 框架与迭代算法">RECAP 框架与迭代算法</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/value-function/" title="π0.6 · 回报分布价值函数">回报分布价值函数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/advantage/" title="π0.6 · 优势估计与优势条件策略">优势估计与优势条件策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/phenomena/" title="π0.6 · 实验结果与关键现象">实验结果与关键现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-06/implementation/" title="π0.6 · 实现接口与静态复现门禁">实现接口与静态复现门禁</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openpi-07/" title="π0.7：可引导通用机器人基础模型">π0.7</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/architecture/" title="π0.7 · 网络架构与输入输出">网络架构与输入输出</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/prompt-conditioning/" title="π0.7 · 多样化提示与可引导性">多样化提示与可引导性</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/memory/" title="π0.7 · MEM 历史视觉与状态记忆">MEM 历史视觉与状态记忆</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/training/" title="π0.7 · 数据、训练目标与公开边界">数据、训练目标与公开边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/hierarchy-world-model/" title="π0.7 · 高层策略、世界模型与视觉子目标">高层策略与视觉子目标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/inference/" title="π0.7 · CFG、RTC 与异步推理">CFG、RTC 与异步推理</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/phenomena/" title="π0.7 · 实验、泛化与推理期现象">实验、泛化与推理现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openpi-07/open-source/" title="π0.7 · 开源状态、非官方实现与复现路线">开源状态与复现路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/harness-vla/" title="Harness VLA：冻结 VLA 的记忆引导式可靠编排">Harness VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/foundations/" title="Harness VLA ①：基础概念与方法边界">基础概念与方法边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/architecture/" title="Harness VLA ②：系统架构与闭环数据流">系统架构与闭环数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/primitives/" title="Harness VLA ③：动作原语与混合控制">动作原语与混合控制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/memory/" title="Harness VLA ④：Memory、探索与经验迭代">Memory 与经验迭代</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/training-loss/" title="Harness VLA ⑤：训练、Loss 与参数更新边界">训练与 Loss 边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/flash-mode/" title="Harness VLA ⑥：Flash Mode 与执行效率">Flash Mode 与效率</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/experiments-phenomena/" title="Harness VLA ⑦：实验、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/implementation/" title="Harness VLA ⑧：RPent 源码映射与严格复现">RPent 源码与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/harness-vla/comparison/" title="Harness VLA ⑨：横向比较与研究路线">横向比较与研究路线</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rtc/" title="RTC：Real-Time Chunking 实时动作分块">RTC</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/foundations/" title="RTC · 问题建模、动作块与异步时序">问题建模与时序</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/guided-inpainting/" title="RTC · 引导式 Inpainting、VJP 与 Soft Mask">引导式 Inpainting</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/runtime/" title="RTC · 异步执行系统、动作队列与延迟调度">异步执行系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/training-time/" title="RTC · Training-Time Action Conditioning 与后缀 Loss">Training-Time RTC</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/source-code/" title="RTC · 官方源码、LeRobot 集成与复现路线">源码与工程接入</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/experiments/" title="RTC · 实验、延迟消融与证据边界">实验与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rtc/phenomena/" title="RTC · 反直觉现象、故障诊断与研究边界">现象诊断与局限</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlt/" title="RLT：RL Token 在线强化学习">RLT</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/foundations/" title="RLT · 问题、方法坐标与创新链">问题与创新链</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/rl-token/" title="RLT · RL Token 表征学习">RL Token 表征</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/actor-critic/" title="RLT · Actor-Critic、TD Target 与 Loss">Actor-Critic 与 Loss</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/action-refinement/" title="RLT · 动作块、参考动作与局部改进">动作块与参考动作</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/online-system/" title="RLT · 在线训练、Replay 与人在回路系统">在线训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/implementation/" title="RLT · 开源状态、源码映射与复现审计">开源实现与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlt/experiments-phenomena/" title="RLT · 实验、消融、异常现象与诊断">实验与异常诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/rlhf-vla/" title="RLHF-VLA：人类反馈与偏好对齐">RLHF-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/foundations/" title="RLHF-VLA ①：基础概念与方法坐标">基础概念与方法坐标</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/feedback-data/" title="RLHF-VLA ②：人类反馈与数据构造">人类反馈与数据构造</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/architecture/" title="RLHF-VLA ③：整体网络与模块数据流">整体网络与模块数据流</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/reward-model/" title="RLHF-VLA ④：Reward Model">Reward Model</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/ppo/" title="RLHF-VLA ⑤：PPO-RLHF 训练">PPO-RLHF 训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/direct-preference/" title="RLHF-VLA ⑥：DPO、KTO 与 APO">DPO、KTO 与 APO</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/trajectory-continuous/" title="RLHF-VLA ⑦：轨迹偏好与连续策略">轨迹偏好与连续策略</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/online-system/" title="RLHF-VLA ⑧：在线迭代训练系统">在线迭代训练系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/implementation/" title="RLHF-VLA ⑨：开源实现与源码映射">开源实现与源码映射</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/rlhf-vla/phenomena/" title="RLHF-VLA ⑩：异常现象与诊断">异常现象与诊断</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/openvla/" title="OpenVLA">OpenVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/architecture/" title="OpenVLA · 网络架构与 Prismatic 主干">网络架构与主干</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/action-tokenizer/" title="OpenVLA · 动作 token 化与量化误差">动作 token 化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/data/" title="OpenVLA · OXE 数据与配方筛选">OXE 数据与配方</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/training/" title="OpenVLA · 训练目标、优化与并行">训练与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/deployment/" title="OpenVLA · 微调与部署">微调与部署</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/experiments/" title="OpenVLA · 实验与基准">实验与基准</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/phenomena/" title="OpenVLA · 反常现象与底层原因">反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/oft/" title="OpenVLA · 局限与 OpenVLA-OFT">局限与 OFT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/openvla/source-code/" title="OpenVLA · 官方源码逐文件剖析">源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/x-vla/" title="X-VLA：软提示跨本体">X-VLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/architecture/" title="X-VLA · 网络架构与 Token 组织">网络架构与 Token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/soft-prompt/" title="X-VLA · Soft Prompt 与跨本体机制">Soft Prompt 与跨本体</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/flow-matching/" title="X-VLA · 动作表示与损失">动作表示与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/training/" title="X-VLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/deployment/" title="X-VLA · 推理、部署与机械臂迁移">推理部署与迁移</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/phenomena/" title="X-VLA · 反常现象、实验与局限">反常现象与局限</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/x-vla/source-code/" title="X-VLA · 官方源码逐文件剖析">官方源码逐文件剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/smolvla/" title="SmolVLA：小而高效的 VLA">SmolVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/backbone/" title="SmolVLA · 主干 SmolVLM2 与多模态 token">主干与多模态 token</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/action-expert/" title="SmolVLA · 动作专家与交错注意力">动作专家与交错注意力</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/flow-matching/" title="SmolVLA · Flow Matching 与损失">Flow Matching 与损失</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/training/" title="SmolVLA · 训练配方与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/inference/" title="SmolVLA · 推理、动作块与异步执行">推理与异步执行</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/ablations/" title="SmolVLA · 消融实验与反直觉现象">消融与反直觉现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/smolvla/source-code/" title="SmolVLA · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1/" title="GR00T N1：双系统人形机器人基础模型">GR00T N1</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/architecture/" title="GR00T N1 · 网络架构与双系统">网络架构与双系统</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/data-pyramid/" title="GR00T N1 · 数据金字塔、动作标签与合成数据">数据金字塔</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/flow-matching/" title="GR00T N1 · Flow Matching、损失与时间方向">流匹配与时间方向</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/training/" title="GR00T N1 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/inference-deployment/" title="GR00T N1 · 推理部署与动作块消费">推理部署与动作块</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/experiments/" title="GR00T N1 · 实验、基准与合成数据收益">实验与合成数据收益</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/phenomena/" title="GR00T N1 · 反常现象、证据边界与可能机制">反常现象与证据边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1/source-code/" title="GR00T N1 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-5/" title="GR00T N1.5：冻结 VLM 与隐式世界模型">GR00T N1.5</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/architecture/" title="GR00T N1.5 · 架构增量与 VL 接口重建">架构增量与 VL 接口</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/dreamgen/" title="GR00T N1.5 · DreamGen 与预训练数据体系">DreamGen 数据体系</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/flare/" title="GR00T N1.5 · FLARE 未来潜在表征对齐">FLARE 对齐</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/training/" title="GR00T N1.5 · 训练配方、损失组合与优化配置">训练配方与优化</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/inference/" title="GR00T N1.5 · 推理流程与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/experiments/" title="GR00T N1.5 · 实验结果与横向对比">实验与横向对比</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-5/source-code/" title="GR00T N1.5 · 官方源码剖析">官方源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/groot-n1-6/" title="GR00T N1.6：相对动作与 32 层 DiT">GR00T N1.6</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/architecture/" title="GR00T N1.6 · 架构增量与 32 层 AlternateVLDiT">架构与 32 层 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action-data/" title="GR00T N1.6 · 相对动作与数据契约概览">动作与数据契约</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/relative-action/" title="GR00T N1.6 · 相对动作表示">相对动作表示</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/data-statistics/" title="GR00T N1.6 · 数据与统计量">数据与统计量</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/flow-matching/" title="GR00T N1.6 · Flow Matching、Masked MSE 与时间方向">Flow 与 Masked MSE</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/training/" title="GR00T N1.6 · 预训练、后训练与参数更新">预训练与后训练</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/inference/" title="GR00T N1.6 · 推理闭环与反常现象">推理与反常现象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/experiments/" title="GR00T N1.6 · 实验结果、证据边界与复现路线">实验与复现</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/groot-n1-6/source-code/" title="GR00T N1.6 · 固定源码剖析与实现边界">固定源码剖析</a>
+                              </li>
+</ul>
+</li>
+<li>
+                        <a href="/knowledge/imitation-learning/vla/dexgraspvla/" title="DexGraspVLA：分层灵巧抓取">DexGraspVLA</a><ul>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/planner/" title="DexGraspVLA · 高层规划器与目标抽象">规划器与目标抽象</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/perception-tracking/" title="DexGraspVLA · 目标感知与跟踪">目标感知与跟踪</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/architecture/" title="DexGraspVLA · 观测编码器与 DiT 架构">编码器与 DiT</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/diffusion/" title="DexGraspVLA · 扩散建模与 Immiscible Diffusion">扩散与噪声匹配</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/training/" title="DexGraspVLA · 训练流程与超参数">训练与超参数</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/inference/" title="DexGraspVLA · 推理闭环与行为机制">推理闭环与行为机制</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/experiments/" title="DexGraspVLA · 实验、消融与泛化边界">实验与泛化边界</a>
+                              </li>
+<li>
+                                <a href="/knowledge/imitation-learning/vla/dexgraspvla/source-code/" title="DexGraspVLA · 官方源码剖析与实现边界">官方源码与实现边界</a>
+                              </li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+        </details><details class="note-tree-grp">
+          <summary>
+            ② 强化学习<span class="n">88</span>
+          </summary>
+          <ul>
+            <li>
+              <a href="/knowledge/reinforcement-learning/" title="强化学习">强化学习总览</a>
+            </li>
+<li class="part">第一部分 · 基础</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/intro/" title="初探强化学习与多臂老虎机">初探与多臂老虎机</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mdp/" title="马尔可夫决策过程">马尔可夫决策过程</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dynamic-programming/" title="动态规划：策略迭代与价值迭代">动态规划</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/temporal-difference/" title="时序差分：Sarsa 与 Q-learning">时序差分</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dyna-q/" title="Dyna-Q：基于模型的规划与学习">Dyna-Q</a>
+</li>
+<li class="part">第二部分 · 进阶</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn/" title="DQN">DQN</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/atari/" title="DQN · Atari 网络结构与预处理管线">Atari 网络与预处理</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn/pitfalls/" title="DQN · 训练与推理期的反常现象诊断">反常现象诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/dqn-improvements/" title="DQN 改进">DQN 改进</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/overestimation/" title="DQN 改进 · 过估计偏差与 Double DQN">过估计与 Double</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/dueling/" title="DQN 改进 · Dueling 价值与优势分解">Dueling 分解</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/per/" title="DQN 改进 · 优先经验回放">优先经验回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/multi-step/" title="DQN 改进 · 多步回报">多步回报</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/distributional/" title="DQN 改进 · 分布式强化学习与 C51">分布式与 C51</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/noisy-net/" title="DQN 改进 · NoisyNet 参数化噪声探索">NoisyNet 探索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/dqn-improvements/rainbow/" title="DQN 改进 · Rainbow 组合与消融">Rainbow</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/policy-gradient/" title="策略梯度">策略梯度</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/theorem/" title="策略梯度 · 定理与两条证明路径">定理与证明路径</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/variance/" title="策略梯度 · 方差、基线与降方差">方差与基线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/policy-network/" title="策略梯度 · 策略网络与分布族参数化">策略网络</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/reinforce/" title="策略梯度 · REINFORCE 算法与实现">REINFORCE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/policy-gradient/pitfalls/" title="策略梯度 · 失效模式、诊断与调试">失效模式与诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/actor-critic/" title="Actor-Critic">Actor-Critic</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/foundations/" title="Actor-Critic · 数学基础：优势、TD 误差与偏差方差">数学基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/critic-learning/" title="Actor-Critic · Critic 的学习：半梯度与两时间尺度">Critic 学习</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/advantage-estimation/" title="Actor-Critic · 优势估计：n 步、λ-回报、资格迹与 GAE">优势估计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/network-design/" title="Actor-Critic · 网络结构与模块设计">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/training/" title="Actor-Critic · 损失、优化设置与训练循环">损失与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/a2c-a3c/" title="Actor-Critic · A2C 与 A3C：同步和异步并行">A2C 与 A3C</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/family/" title="Actor-Critic · 家族谱系与算法分类">家族谱系</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/actor-critic/diagnostics/" title="Actor-Critic · 反常现象、失效模式与诊断">失效诊断</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/trpo/" title="TRPO：信任域策略优化">TRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/theory/" title="TRPO · 理论基础：性能差恒等式与单调改进下界">理论基础</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/formulation/" title="TRPO · 从理论到可解问题：KL 约束、平均 KL 与样本估计">理论到可解问题</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/natural-gradient/" title="TRPO · 自然梯度：二阶近似、Fisher 矩阵与步长解析解">自然梯度与 Fisher</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/solver/" title="TRPO · 数值求解：共轭梯度、Fisher 向量积与线搜索">CG、FVP 与线搜索</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/training/" title="TRPO · 网络结构、优势估计与完整训练流程">网络、GAE 与训练</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/implementation/" title="TRPO · 代码实现：逐函数精读与主流实现对照">代码实现与审计</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/trpo/experiments/" title="TRPO · 实验结果、反常现象与局限">实验、反常与局限</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ddpg/" title="DDPG：深度确定性策略梯度">DDPG</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/foundations/" title="DDPG · DPG 理论基础与 off-policy 目标">DPG 理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/architecture/" title="DDPG · 四网络结构与数据流">四网络与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/optimization/" title="DDPG · 损失函数、优化与更新时序">损失与更新</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/exploration-replay/" title="DDPG · 探索噪声与经验回放">探索与回放</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/implementation/" title="DDPG · PyTorch 实现与代码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/diagnostics/" title="DDPG · 异常现象、诊断与实验设计">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ddpg/extensions/" title="DDPG · 从 TD3、D4PG、HER 到 SAC 的算法演进">算法演进</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/ppo/" title="PPO：近端策略优化">PPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/clipping/" title="PPO · 近端目标与裁剪机制">近端目标与裁剪</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/rollout-gae/" title="PPO · Rollout、GAE 与批数据">Rollout 与 GAE</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/architecture/" title="PPO · Actor-Critic 网络与动作分布">网络与动作分布</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/optimization/" title="PPO · Loss、优化与更新流程">Loss 与优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/implementation/" title="PPO · PyTorch 实现与源码映射">PyTorch 与源码</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/robotics/" title="PPO · 机器人连续控制工程">机器人连续控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/diagnostics/" title="PPO · 异常现象与诊断手册">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/ppo/extensions/" title="PPO · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/sac/" title="SAC：Soft Actor-Critic 专题">SAC</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/foundations/" title="SAC · 最大熵与 Soft 策略迭代">最大熵理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/architecture/" title="SAC · 网络结构与数据流">网络结构</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/losses/" title="SAC · Loss、温度与梯度">Loss 与温度</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/training/" title="SAC · 训练流程与超参数">训练与超参数</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/implementation/" title="SAC · PyTorch 实现与源码审计">PyTorch 实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/robotics/" title="SAC · 机器人、视觉与数据效率">机器人与视觉</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/diagnostics/" title="SAC · 异常现象与诊断">异常诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/sac/extensions/" title="SAC · 改进算法与研究地图">改进与研究地图</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/td3/" title="TD3">TD3</a>
+</li>
+<li class="part">第三部分 · 前沿</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/hil-serl/" title="HIL-SERL：人在环在线机器人强化学习">HIL-SERL</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/architecture/" title="HIL-SERL · 整体架构与训练数据流">架构与数据流</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/human-loop/" title="HIL-SERL · 人工接管与双经验池">接管与双经验池</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/losses/" title="HIL-SERL · RLPD、SAC 与更新公式">RLPD / SAC Loss</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/reward-control/" title="HIL-SERL · 视觉奖励、夹爪与安全控制">奖励与安全控制</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/training-code/" title="HIL-SERL · 训练优化与源码复现">训练与源码复现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/phenomena/" title="HIL-SERL · 实验现象与诊断">现象与诊断</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/hil-serl/research/" title="HIL-SERL · 相关研究、开源选型与 VLA 路线">研究与 VLA 路线</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/drpo/" title="DRPO：同名方法消歧与研究地图">DRPO</a><ul>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/divergence-regularized/" title="DRPO · 散度正则的理论与梯度">散度正则理论</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/unirl-implementation/" title="DRPO · UniRL 工程实现与训练诊断">UniRL 工程实现</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/decoupled-reward/" title="DRPO · 奖励解耦策略优化">奖励解耦</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/safe-robotics/" title="DRPO · 分布型可达性与安全机器人">安全机器人</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/federated-offline/" title="DRPO · 双正则联邦离线策略优化">联邦离线优化</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/comparison-roadmap/" title="DRPO · 横向比较、选型与研究路线">横向比较与路线</a>
+</li>
+<li>
+                        <a href="/knowledge/reinforcement-learning/drpo/vla-research/" title="DRPO · 面向 VLA 的迁移假设与实验设计">VLA 迁移实验</a>
+</li>
+</ul>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/gail/" title="模仿学习与 GAIL">GAIL</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/mpc/" title="模型预测控制与 MBPO">MPC 与 MBPO</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/offline-rl/" title="离线强化学习：CQL">离线强化学习</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/her/" title="目标导向强化学习：HER">目标导向 HER</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/marl/" title="多智能体强化学习入门">多智能体入门</a>
+</li>
+<li>
+                <a href="/knowledge/reinforcement-learning/maddpg/" title="多智能体进阶：MADDPG">MADDPG</a>
+</li>
+</ul>
+        </details><a href="/knowledge/docker/" title="Docker 工程环境">③ Docker 工程环境</a><a href="/knowledge/papers/" title="论文索引">📑 论文索引</a></details>
+</div>
+
+<script>
   // 渐进增强：把目录树搬到左侧栏，并把主题自带的本页目录收进同一个 sticky 容器。
   // 没有 JS 时树仍在正文顶部，可见可点，只是不在左侧。
   (function () {
@@ -201,20 +2196,176 @@
       tree.open = false;
     }
   })();
-</script> <style>
+</script>
+
+<style>
 .note-nav{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1.2rem 0 1.4rem;padding:.72rem 1rem;border:1px solid var(--global-divider-color,#ddd);border-radius:10px;font-size:.88rem}.note-nav .sep{opacity:.35}.note-nav .cur{opacity:.68}.note-hero{margin:1rem 0 1.4rem;padding:1.15rem 1.25rem;border:1px solid color-mix(in srgb,var(--global-theme-color,#b509ac) 30%,var(--global-divider-color,#ddd));border-radius:16px;background:linear-gradient(135deg,color-mix(in srgb,var(--global-theme-color,#b509ac) 10%,transparent),rgba(53,139,102,.08))}.note-hero h2{margin:.2rem 0 .55rem;font-size:clamp(1.35rem,4vw,2rem)}.note-eyebrow{font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--global-theme-color,#b509ac)}.note-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.75rem;margin:1.2rem 0}.note-kpi div{padding:.75rem .85rem;border:1px solid var(--global-divider-color,#ddd);border-radius:10px}.note-kpi b{display:block;font-size:1.15rem}.note-kpi span{font-size:.78rem;opacity:.72}.note-key,.note-warn,.note-rule,.note-debug{margin:1rem 0;padding:.82rem 1rem;border-radius:10px}.note-key{border-left:4px solid #17806d;background:rgba(23,128,109,.08)}.note-warn{border-left:4px solid #cc7a18;background:rgba(204,122,24,.09)}.note-rule{border-left:4px solid #4f69b1;background:rgba(79,105,177,.08)}.note-debug{border-left:4px solid #a54267;background:rgba(165,66,103,.08)}.note-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:.85rem;margin:1rem 0}.note-card{padding:.9rem 1rem;border:1px solid var(--global-divider-color,#ddd);border-radius:11px}.note-card h3{margin:.05rem 0 .55rem;font-size:1rem}.note-tbl{overflow-x:auto;margin:1rem 0}.note-badge{display:inline-block;padding:.13rem .48rem;border-radius:999px;font-size:.72rem;font-weight:800;color:#176c5f;background:rgba(23,128,109,.12)}.note-bad{color:#9a491d;background:rgba(204,122,24,.14)}.note-check li{margin:.28rem 0}.post a{overflow-wrap:anywhere;word-break:break-word}.post pre{max-width:100%;overflow:auto}.post mjx-container[jax="CHTML"][display="true"]{max-width:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:.15rem}
-</style> <div class="note-nav"> <a href="/knowledge/">知识库</a> <span class="sep">/</span> <a href="/knowledge/reinforcement-learning/">强化学习</a> <span class="sep">/</span> <span class="cur">Monte Carlo</span> </div> <section class="note-hero"> <div class="note-eyebrow">Complete returns · sample averages · off-policy estimation</div> <h2>等一局结束，用真实回报学习</h2> <p>动态规划对模型求期望；Monte Carlo 不要模型，等 episode 完成后把真实回报当样本；时序差分进一步不等结局，用当前估计 bootstrap。MC 是从“已知模型”走向“只凭经验”的第一座桥。</p> </section> <div class="note-kpi"> <div> <b>0 个模型</b><span>不需要转移概率与奖励表</span> </div> <div> <b>0 次 bootstrap</b><span>纯 episodic MC 的定义特征</span> </div> <div> <b>2 种 visit</b><span>first-visit / every-visit</span> </div> <div> <b>12 项测试</b><span>回报、覆盖、权重与边界</span> </div> </div> <div class="note-key"> <p><strong>一句话契约</strong>：在策略 $\pi$ 下采样到完整 episode，用</p> \[G_t=\sum_{k=0}^{T-t-1}\gamma^kR_{t+k+1}\] <p>作为 $v_\pi(S_t)$ 或 $q_\pi(S_t,A_t)$ 的样本。若 episode 是被 MDP 外部截断的，尾部再接价值估计就已经是 <strong>bootstrapped partial return</strong>，不能继续称为“纯 MC 完整回报”。</p> </div> <h2 id="1-为什么-mc-位于-dp-与-td-之间">1. 为什么 MC 位于 DP 与 TD 之间</h2> <div class="note-tbl"> <table> <thead> <tr> <th>方法</th> <th>需要环境模型</th> <th>target 来源</th> <th>何时更新</th> <th>主要代价</th> </tr> </thead> <tbody> <tr> <td>动态规划（DP）</td> <td>需要 $p(s’,r\mid s,a)$</td> <td>对全部后继求精确期望</td> <td>可做 sweep</td> <td>模型通常不可得</td> </tr> <tr> <td>Monte Carlo（MC）</td> <td>不需要</td> <td>完整 episode 的采样回报 $G_t$</td> <td>通常在 episode 结束后</td> <td>高方差、需等待结局</td> </tr> <tr> <td>时序差分（TD）</td> <td>不需要</td> <td>$R_{t+1}+\gamma V(S_{t+1})$</td> <td>每一步</td> <td>有 bootstrap 偏差与耦合</td> </tr> </tbody> </table> </div> <pre><code class="language-mermaid">flowchart LR
+</style>
+
+<div class="note-nav">
+  <a href="/knowledge/">知识库</a>
+  <span class="sep">/</span>
+  <a href="/knowledge/reinforcement-learning/">强化学习</a>
+  <span class="sep">/</span>
+  <span class="cur">Monte Carlo</span>
+</div>
+
+<section class="note-hero">
+  <div class="note-eyebrow">Complete returns · sample averages · off-policy estimation</div>
+  <h2 id="rl-raw-heading-001">等一局结束，用真实回报学习</h2>
+  <p>动态规划对模型求期望；Monte Carlo 不要模型，等 episode 完成后把真实回报当样本；时序差分进一步不等结局，用当前估计 bootstrap。MC 是从“已知模型”走向“只凭经验”的第一座桥。</p>
+</section>
+
+<div class="note-kpi">
+  <div>
+<b>0 个模型</b><span>不需要转移概率与奖励表</span>
+</div>
+  <div>
+<b>0 次 bootstrap</b><span>纯 episodic MC 的定义特征</span>
+</div>
+  <div>
+<b>2 种 visit</b><span>first-visit / every-visit</span>
+</div>
+  <div>
+<b>12 项测试</b><span>回报、覆盖、权重与边界</span>
+</div>
+</div>
+
+<div class="note-key">
+
+  <p><strong>一句话契约</strong>：在策略 \(\pi\) 下采样到完整 episode，用</p>
+
+\[G_t=\sum_{k=0}^{T-t-1}\gamma^kR_{t+k+1}\]
+
+  <p>作为 \(v_\pi(S_t)\) 或 \(q_\pi(S_t,A_t)\) 的样本。若 episode 是被 MDP 外部截断的，尾部再接价值估计就已经是 <strong>bootstrapped partial return</strong>，不能继续称为“纯 MC 完整回报”。</p>
+
+</div>
+
+<h2 id="1-为什么-mc-位于-dp-与-td-之间">1. 为什么 MC 位于 DP 与 TD 之间</h2>
+
+<div class="note-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>方法</th>
+        <th>需要环境模型</th>
+        <th>target 来源</th>
+        <th>何时更新</th>
+        <th>主要代价</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>动态规划（DP）</td>
+        <td>需要 \(p(s',r\mid s,a)\)</td>
+        <td>对全部后继求精确期望</td>
+        <td>可做 sweep</td>
+        <td>模型通常不可得</td>
+      </tr>
+      <tr>
+        <td>Monte Carlo（MC）</td>
+        <td>不需要</td>
+        <td>完整 episode 的采样回报 \(G_t\)</td>
+        <td>通常在 episode 结束后</td>
+        <td>高方差、需等待结局</td>
+      </tr>
+      <tr>
+        <td>时序差分（TD）</td>
+        <td>不需要</td>
+        <td>\(R_{t+1}+\gamma V(S_{t+1})\)</td>
+        <td>每一步</td>
+        <td>有 bootstrap 偏差与耦合</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<pre><code class="language-mermaid">flowchart LR
   DP["DP&lt;br/&gt;模型期望"] --&gt;|"去掉模型&lt;br/&gt;用完整样本"| MC["Monte Carlo&lt;br/&gt;完整 return"]
   MC --&gt;|"不等结局&lt;br/&gt;加入 bootstrap"| TD["TD&lt;br/&gt;一步或多步 target"]
   DP -. "expected backup" .-&gt; ROOT["价值估计"]
   MC -. "sample backup" .-&gt; ROOT
   TD -. "sample + estimate" .-&gt; ROOT
-</code></pre> <p>前置阅读：<a href="/knowledge/reinforcement-learning/intro/">强化学习初探与多臂老虎机</a>、<a href="/knowledge/reinforcement-learning/mdp/">MDP</a>、<a href="/knowledge/reinforcement-learning/dynamic-programming/">动态规划</a>。学完本页再读<a href="/knowledge/reinforcement-learning/temporal-difference/">时序差分</a>，才能真正看清 bootstrap 带来的变化。</p> <h2 id="2-episode奖励下标与回报">2. Episode、奖励下标与回报</h2> <p>采用标准轨迹记号：</p> \[S_0,A_0,R_1,S_1,A_1,R_2,\ldots,R_T,S_T.\] <p>$R_{t+1}$ 是执行 $A_t$ 后收到的奖励。有限 episode 在时刻 $T$ 结束，时刻 $t$ 的 discounted return 为：</p> \[G_t = R_{t+1}+\gamma R_{t+2}+\cdots+\gamma^{T-t-1}R_T.\] <p>递推式是：</p> \[G_t=R_{t+1}+\gamma G_{t+1}, \qquad G_{T-1}=R_T.\] <p><span class="note-badge note-bad">常见错位</span> 把 $R_t$ 当成动作 $A_t$ 的即时奖励，会让整条 return 向前或向后错一位。代码中建议让 <code class="language-plaintext highlighter-rouge">rewards[t]</code> 明确表示数学上的 $R_{t+1}$，并在数据类注释中固定这一约定。</p> <h3 id="21-逆序计算">2.1 逆序计算</h3> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">G</span> <span class="o">=</span> <span class="mf">0.0</span>
+</code></pre>
+
+<p>前置阅读：<a href="/knowledge/reinforcement-learning/intro/">强化学习初探与多臂老虎机</a>、<a href="/knowledge/reinforcement-learning/mdp/">MDP</a>、<a href="/knowledge/reinforcement-learning/dynamic-programming/">动态规划</a>。学完本页再读<a href="/knowledge/reinforcement-learning/temporal-difference/">时序差分</a>，才能真正看清 bootstrap 带来的变化。</p>
+
+<h2 id="2-episode奖励下标与回报">2. Episode、奖励下标与回报</h2>
+
+<p>采用标准轨迹记号：</p>
+
+\[S_0,A_0,R_1,S_1,A_1,R_2,\ldots,R_T,S_T.\]
+
+<p>\(R_{t+1}\) 是执行 \(A_t\) 后收到的奖励。有限 episode 在时刻 \(T\) 结束，时刻 \(t\) 的 discounted return 为：</p>
+
+\[G_t
+=
+R_{t+1}+\gamma R_{t+2}+\cdots+\gamma^{T-t-1}R_T.\]
+
+<p>递推式是：</p>
+
+\[G_t=R_{t+1}+\gamma G_{t+1},
+\qquad
+G_{T-1}=R_T.\]
+
+<p><span class="note-badge note-bad">常见错位</span> 把 \(R_t\) 当成动作 \(A_t\) 的即时奖励，会让整条 return 向前或向后错一位。代码中建议让 <code class="language-plaintext highlighter-rouge">rewards[t]</code> 明确表示数学上的 \(R_{t+1}\)，并在数据类注释中固定这一约定。</p>
+
+<h3 id="21-逆序计算">2.1 逆序计算</h3>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">G</span> <span class="o">=</span> <span class="mf">0.0</span>
 <span class="n">returns</span> <span class="o">=</span> <span class="nf">zeros</span><span class="p">(</span><span class="n">T</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nf">reversed</span><span class="p">(</span><span class="nf">range</span><span class="p">(</span><span class="n">T</span><span class="p">)):</span>
     <span class="n">G</span> <span class="o">=</span> <span class="n">rewards</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">G</span>
     <span class="n">returns</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">G</span>
-</code></pre></div></div> <p>这种实现只扫描一次 episode。若 $\gamma=0$，立即退化为 <code class="language-plaintext highlighter-rouge">returns[t] == rewards[t]</code>；这是很有用的边界测试。</p> <h3 id="22-mc-估计的对象">2.2 MC 估计的对象</h3> <p>状态价值：</p> \[v_\pi(s)=\mathbb E_\pi[G_t\mid S_t=s].\] <p>动作价值：</p> \[q_\pi(s,a)=\mathbb E_\pi[G_t\mid S_t=s,A_t=a].\] <p>MC 不要求知道转移模型，但仍要求：</p> <ul> <li>数据确实由声明的策略分布产生，或有正确的 off-policy 修正；</li> <li>episode/边界语义正确；</li> <li>回报的期望存在；</li> <li>被估计的状态或状态—动作对得到足够覆盖。</li> </ul> <h2 id="3-first-visit-与-every-visit-prediction">3. First-visit 与 Every-visit prediction</h2> <p>假设同一个状态 $s$ 在一条 episode 中出现多次。</p> <ul> <li> <strong>First-visit MC</strong>：每条 episode 只用 $s$ 的第一次出现；</li> <li> <strong>Every-visit MC</strong>：使用 $s$ 的每一次出现。</li> </ul> <p>对动作价值，把“状态出现”换成“状态—动作对出现”。</p> <div class="note-rule"> <p>first-visit 的“第一次”是按环境时间从前向后看最早的访问，不是逆序计算 return 时最先遇到的访问。逆序循环配一个 <code class="language-plaintext highlighter-rouge">seen</code> 集合会保留<strong>最后一次访问</strong>，这是非常常见的实现错误。</p> </div> <h3 id="31-无歧义的实现">3.1 无歧义的实现</h3> <p>先逆序算出全部 return，再正序选择访问：</p> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">returns</span> <span class="o">=</span> <span class="nf">discounted_returns</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>这种实现只扫描一次 episode。若 \(\gamma=0\)，立即退化为 <code class="language-plaintext highlighter-rouge">returns[t] == rewards[t]</code>；这是很有用的边界测试。</p>
+
+<h3 id="22-mc-估计的对象">2.2 MC 估计的对象</h3>
+
+<p>状态价值：</p>
+
+\[v_\pi(s)=\mathbb E_\pi[G_t\mid S_t=s].\]
+
+<p>动作价值：</p>
+
+\[q_\pi(s,a)=\mathbb E_\pi[G_t\mid S_t=s,A_t=a].\]
+
+<p>MC 不要求知道转移模型，但仍要求：</p>
+
+<ul>
+  <li>数据确实由声明的策略分布产生，或有正确的 off-policy 修正；</li>
+  <li>episode/边界语义正确；</li>
+  <li>回报的期望存在；</li>
+  <li>被估计的状态或状态—动作对得到足够覆盖。</li>
+</ul>
+
+<h2 id="3-first-visit-与-every-visit-prediction">3. First-visit 与 Every-visit prediction</h2>
+
+<p>假设同一个状态 \(s\) 在一条 episode 中出现多次。</p>
+
+<ul>
+  <li>
+<strong>First-visit MC</strong>：每条 episode 只用 \(s\) 的第一次出现；</li>
+  <li>
+<strong>Every-visit MC</strong>：使用 \(s\) 的每一次出现。</li>
+</ul>
+
+<p>对动作价值，把“状态出现”换成“状态—动作对出现”。</p>
+
+<div class="note-rule">
+
+  <p>first-visit 的“第一次”是按环境时间从前向后看最早的访问，不是逆序计算 return 时最先遇到的访问。逆序循环配一个 <code class="language-plaintext highlighter-rouge">seen</code> 集合会保留<strong>最后一次访问</strong>，这是非常常见的实现错误。</p>
+
+</div>
+
+<h3 id="31-无歧义的实现">3.1 无歧义的实现</h3>
+
+<p>先逆序算出全部 return，再正序选择访问：</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">returns</span> <span class="o">=</span> <span class="nf">discounted_returns</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
 <span class="n">seen</span> <span class="o">=</span> <span class="nf">set</span><span class="p">()</span>
 
 <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">state</span> <span class="ow">in</span> <span class="nf">enumerate</span><span class="p">(</span><span class="n">states</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
@@ -222,60 +2373,601 @@
         <span class="k">continue</span>
     <span class="n">seen</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
     <span class="nf">update_state_value</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">returns</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
-</code></pre></div></div> <p>Every-visit 则不使用 <code class="language-plaintext highlighter-rouge">seen</code>：</p> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">state</span> <span class="ow">in</span> <span class="nf">enumerate</span><span class="p">(</span><span class="n">states</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
+</code></pre></div></div>
+
+<p>Every-visit 则不使用 <code class="language-plaintext highlighter-rouge">seen</code>：</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">state</span> <span class="ow">in</span> <span class="nf">enumerate</span><span class="p">(</span><span class="n">states</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]):</span>
     <span class="nf">update_state_value</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">returns</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
-</code></pre></div></div> <p>在有限 MDP、适当覆盖和标准随机近似条件下，两者都能收敛到 $v_\pi$；有限样本方差与相关性不同。不要把“都收敛”误写成“任意数据量都给出相同数值”。</p> <h3 id="32-一个重复状态例子">3.2 一个重复状态例子</h3> <p>轨迹：</p> \[S_0=A,\quad S_1=B,\quad S_2=A,\quad S_3=\text{terminal}.\] <p>若三个奖励为 $1,2,4$，$\gamma=1$，则：</p> \[G_0=7,\quad G_1=6,\quad G_2=4.\] <ul> <li>first-visit 对 $A$ 只更新 $G_0=7$；</li> <li>every-visit 对 $A$ 更新 $7$ 与 $4$；</li> <li>一个从后向前的 <code class="language-plaintext highlighter-rouge">seen</code> 错误实现只会留下 $G_2=4$，那是 last-visit，不是 first-visit。</li> </ul> <h2 id="4-样本均值与增量更新">4. 样本均值与增量更新</h2> <p>收集到状态 $s$ 的第 $N$ 个合格回报样本 $G_N$ 后，先令 $N(s)\leftarrow N(s)+1$，再更新：</p> \[V(s) \leftarrow V(s)+\frac{1}{N(s)}\left(G_N-V(s)\right).\] <p>它与保存全部 return 后求 batch mean 完全等价，却只需常数额外存储。</p> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">count</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+</code></pre></div></div>
+
+<p>在有限 MDP、适当覆盖和标准随机近似条件下，两者都能收敛到 \(v_\pi\)；有限样本方差与相关性不同。不要把“都收敛”误写成“任意数据量都给出相同数值”。</p>
+
+<h3 id="32-一个重复状态例子">3.2 一个重复状态例子</h3>
+
+<p>轨迹：</p>
+
+\[S_0=A,\quad S_1=B,\quad S_2=A,\quad S_3=\text{terminal}.\]
+
+<p>若三个奖励为 \(1,2,4\)，\(\gamma=1\)，则：</p>
+
+\[G_0=7,\quad G_1=6,\quad G_2=4.\]
+
+<ul>
+  <li>first-visit 对 \(A\) 只更新 \(G_0=7\)；</li>
+  <li>every-visit 对 \(A\) 更新 \(7\) 与 \(4\)；</li>
+  <li>一个从后向前的 <code class="language-plaintext highlighter-rouge">seen</code> 错误实现只会留下 \(G_2=4\)，那是 last-visit，不是 first-visit。</li>
+</ul>
+
+<h2 id="4-样本均值与增量更新">4. 样本均值与增量更新</h2>
+
+<p>收集到状态 \(s\) 的第 \(N\) 个合格回报样本 \(G_N\) 后，先令 \(N(s)\leftarrow N(s)+1\)，再更新：</p>
+
+\[V(s)
+\leftarrow
+V(s)+\frac{1}{N(s)}\left(G_N-V(s)\right).\]
+
+<p>它与保存全部 return 后求 batch mean 完全等价，却只需常数额外存储。</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">count</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
 <span class="n">value</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">G</span> <span class="o">-</span> <span class="n">value</span><span class="p">[</span><span class="n">s</span><span class="p">])</span> <span class="o">/</span> <span class="n">count</span><span class="p">[</span><span class="n">s</span><span class="p">]</span>
-</code></pre></div></div> <h3 id="41-常数步长不是普通样本均值">4.1 常数步长不是普通样本均值</h3> <p>非平稳问题中常用：</p> \[V(s)\leftarrow V(s)+\alpha\left(G-V(s)\right), \qquad 0&lt;\alpha\le1.\] <p>展开后，近期样本获得更高的指数权重。它能追踪漂移，但不再是所有历史 return 的算术平均；不能继续用“无偏样本均值”解释。</p> <div class="note-grid"> <div class="note-card"> <h3>步长 $1/N$</h3> <p>平稳目标下自然收敛；早期样本长期保留影响；每个状态需要独立计数。</p> </div> <div class="note-card"> <h3>常数步长 $\alpha$</h3> <p>适合非平稳追踪；存在稳态噪声；需单独报告 $\alpha$，不能伪装成 batch mean。</p> </div> </div> <h2 id="5-从状态价值到动作价值">5. 从状态价值到动作价值</h2> <p>无模型控制无法在 $V(s)$ 上直接做</p> \[\arg\max_a \sum_{s',r}p(s',r\mid s,a)[r+\gamma V(s')],\] <p>因为这个表达式需要模型。MC control 因而学习 $Q(s,a)$，直接比较动作价值：</p> \[\pi(s)\in\arg\max_a Q(s,a).\] <p>First-visit MC action-value prediction 的合格样本由 <code class="language-plaintext highlighter-rouge">(state, action)</code> 首次出现决定，不是只看 state：</p> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">seen_pairs</span> <span class="o">=</span> <span class="nf">set</span><span class="p">()</span>
+</code></pre></div></div>
+
+<h3 id="41-常数步长不是普通样本均值">4.1 常数步长不是普通样本均值</h3>
+
+<p>非平稳问题中常用：</p>
+
+\[V(s)\leftarrow V(s)+\alpha\left(G-V(s)\right),
+\qquad 0&lt;\alpha\le1.\]
+
+<p>展开后，近期样本获得更高的指数权重。它能追踪漂移，但不再是所有历史 return 的算术平均；不能继续用“无偏样本均值”解释。</p>
+
+<div class="note-grid">
+  <div class="note-card">
+<h3 id="rl-raw-heading-002">步长 $$1/N$$</h3>
+<p>平稳目标下自然收敛；早期样本长期保留影响；每个状态需要独立计数。</p>
+</div>
+  <div class="note-card">
+<h3 id="rl-raw-heading-003">常数步长 $$\alpha$$</h3>
+<p>适合非平稳追踪；存在稳态噪声；需单独报告 $$\alpha$$，不能伪装成 batch mean。</p>
+</div>
+</div>
+
+<h2 id="5-从状态价值到动作价值">5. 从状态价值到动作价值</h2>
+
+<p>无模型控制无法在 \(V(s)\) 上直接做</p>
+
+\[\arg\max_a \sum_{s',r}p(s',r\mid s,a)[r+\gamma V(s')],\]
+
+<p>因为这个表达式需要模型。MC control 因而学习 \(Q(s,a)\)，直接比较动作价值：</p>
+
+\[\pi(s)\in\arg\max_a Q(s,a).\]
+
+<p>First-visit MC action-value prediction 的合格样本由 <code class="language-plaintext highlighter-rouge">(state, action)</code> 首次出现决定，不是只看 state：</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">seen_pairs</span> <span class="o">=</span> <span class="nf">set</span><span class="p">()</span>
 <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span> <span class="ow">in</span> <span class="nf">enumerate</span><span class="p">(</span><span class="nf">zip</span><span class="p">(</span><span class="n">states</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">actions</span><span class="p">)):</span>
     <span class="n">pair</span> <span class="o">=</span> <span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">pair</span> <span class="ow">in</span> <span class="n">seen_pairs</span><span class="p">:</span>
         <span class="k">continue</span>
     <span class="n">seen_pairs</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">pair</span><span class="p">)</span>
     <span class="nf">update_q</span><span class="p">(</span><span class="n">pair</span><span class="p">,</span> <span class="n">returns</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
-</code></pre></div></div> <h2 id="6-generalized-policy-iteration">6. Generalized Policy Iteration</h2> <p>MC control 仍遵循广义策略迭代（GPI）：</p> <ol> <li> <strong>策略评估</strong>：用 episode return 更新 $Q^\pi$；</li> <li> <strong>策略改进</strong>：让策略更偏向当前高价值动作；</li> <li>两者交替，直到稳定或达到训练预算。</li> </ol> <pre><code class="language-mermaid">flowchart LR
+</code></pre></div></div>
+
+<h2 id="6-generalized-policy-iteration">6. Generalized Policy Iteration</h2>
+
+<p>MC control 仍遵循广义策略迭代（GPI）：</p>
+
+<ol>
+  <li>
+<strong>策略评估</strong>：用 episode return 更新 \(Q^\pi\)；</li>
+  <li>
+<strong>策略改进</strong>：让策略更偏向当前高价值动作；</li>
+  <li>两者交替，直到稳定或达到训练预算。</li>
+</ol>
+
+<pre><code class="language-mermaid">flowchart LR
   P["当前策略 π"] --&gt; S["采样完整 episode"]
   S --&gt; E["MC 评估 Qπ"]
   E --&gt; I["ε-soft / greedy 改进"]
   I --&gt; P
-</code></pre> <p>困难不在公式，而在覆盖：如果策略从不尝试某个动作，就没有它的 return 样本，也无法知道它是否更优。</p> <h2 id="7-exploring-starts有用的理论装置">7. Exploring starts：有用的理论装置</h2> <p>Exploring starts 假设每个 episode 的初始 $(S_0,A_0)$ 都以正概率覆盖所有状态—动作对。它能为 MC control 的理论分析提供充分探索，却通常不适合真实系统：</p> <ul> <li>很多状态无法安全或物理上直接初始化；</li> <li>任意初始动作可能造成碰撞；</li> <li>高维连续状态—动作空间无法枚举；</li> <li>reset 分布本身是任务的一部分，不能随意改写。</li> </ul> <p>因此，exploring starts 应理解为“保证覆盖的理想化条件”，而不是机器人系统的默认实现建议。</p> <h2 id="8-on-policy-mc-control-与-epsilon-soft-策略">8. On-policy MC control 与 epsilon-soft 策略</h2> <p>若行为策略就是要优化的目标策略，可让它保持 $\epsilon$-soft。对有限离散动作集 $\mathcal A(s)$，若唯一 greedy action 为 $a^*$：</p> \[\pi(a\mid s) = \begin{cases} 1-\epsilon+\epsilon/|\mathcal A(s)|,&amp;a=a^\*,\\ \epsilon/|\mathcal A(s)|,&amp;a\ne a^\*. \end{cases}\] <p>若有 $m$ 个并列 greedy actions，应把 exploitation 部分 $1-\epsilon$ 在这 $m$ 个动作间分配，而不是由数组顺序永久偏向第一个。</p> <h3 id="81-算法骨架">8.1 算法骨架</h3> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">initialize</span> <span class="nc">Q</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">),</span> <span class="nf">count</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
-<span class="n">initialize</span> <span class="nf">epsilon_soft_policy</span><span class="p">(</span><span class="n">Q</span><span class="p">,</span> <span class="n">epsilon</span><span class="p">)</span>
+</code></pre>
 
-<span class="k">for</span> <span class="n">episode</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="n">num_episodes</span><span class="p">):</span>
-    <span class="n">trajectory</span> <span class="o">=</span> <span class="nf">generate_episode</span><span class="p">(</span><span class="n">policy</span><span class="p">)</span>
-    <span class="n">returns</span> <span class="o">=</span> <span class="nf">discounted_returns</span><span class="p">(</span><span class="n">trajectory</span><span class="p">.</span><span class="n">rewards</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
-    <span class="n">seen_pairs</span> <span class="o">=</span> <span class="nf">set</span><span class="p">()</span>
+<p>困难不在公式，而在覆盖：如果策略从不尝试某个动作，就没有它的 return 样本，也无法知道它是否更优。</p>
 
-    <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="ow">in</span> <span class="nf">enumerate</span><span class="p">(</span><span class="n">trajectory</span><span class="p">.</span><span class="n">state_action_pairs</span><span class="p">):</span>
-        <span class="nf">if </span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="ow">in</span> <span class="n">seen_pairs</span><span class="p">:</span>
-            <span class="k">continue</span>
-        <span class="n">seen_pairs</span><span class="p">.</span><span class="nf">add</span><span class="p">((</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">))</span>
+<h2 id="7-exploring-starts有用的理论装置">7. Exploring starts：有用的理论装置</h2>
 
-        <span class="n">count</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">returns</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">-</span> <span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">])</span> <span class="o">/</span> <span class="n">count</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">]</span>
+<p>Exploring starts 假设每个 episode 的初始 \((S_0,A_0)\) 都以正概率覆盖所有状态—动作对。它能为 MC control 的理论分析提供充分探索，却通常不适合真实系统：</p>
 
-        <span class="n">policy</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">=</span> <span class="nf">epsilon_soft_distribution</span><span class="p">(</span><span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">],</span> <span class="n">epsilon</span><span class="p">)</span>
-</code></pre></div></div> <p>在 tabular 条件下，持续但逐渐减弱的探索可形成 GLIE 思路；固定 $\epsilon&gt;0$ 则收敛目标是受 $\epsilon$-soft 约束的策略，而非完全 deterministic greedy policy。</p> <div class="note-warn"> <p>$\epsilon$-soft 只保证每个离散动作在已访问状态有非零概率，不保证高维状态空间、稀疏奖励或安全约束下的充分探索。探索的完整设计由后续探索专页负责。</p> </div> <h2 id="9-off-policy目标策略与行为策略">9. Off-policy：目标策略与行为策略</h2> <ul> <li> <strong>target policy $\pi$</strong>：想评估或优化的策略；</li> <li> <strong>behavior policy $b$</strong>：实际生成数据的策略。</li> </ul> <p>要从 $b$ 的轨迹估计 $\pi$，必须满足 coverage：</p> \[\pi(a\mid s)&gt;0 \Longrightarrow b(a\mid s)&gt;0\] <p>至少要在目标策略可能经过的相关状态—动作上成立。如果目标动作在 behavior 下概率为 0，数据中没有任何权重可以“补出”缺失行动。</p> <h3 id="91-状态价值的-trajectory-ratio">9.1 状态价值的 trajectory ratio</h3> <p>估计 $v_\pi(S_t)$ 时，未来动作序列的比率为：</p> \[\rho_{t:T-1} = \prod_{k=t}^{T-1} \frac{\pi(A_k\mid S_k)} {b(A_k\mid S_k)}.\] <p>环境转移概率与奖励分布在分子分母中相消，前提是两种策略面对的是同一个环境机制。</p> <h3 id="92-动作价值的比率起点">9.2 动作价值的比率起点</h3> <p>估计 $q_\pi(S_t,A_t)$ 时已经条件化在当前动作 $A_t$ 上，标准 continuation ratio 从下一步开始：</p> \[\rho_{t+1:T-1} = \prod_{k=t+1}^{T-1} \frac{\pi(A_k\mid S_k)} {b(A_k\mid S_k)}.\] <p>这也是 weighted off-policy MC control 逆序算法在更新当前 $Q(S_t,A_t)$ <strong>之后</strong>才把当前 behavior 概率除进权重的原因。若某篇资料把乘积从 $t$ 开始，先确认它估计的是状态价值、联合事件，还是采用了不同归一化；不能只复制上下标。</p> <h2 id="10-ordinary-与-weighted-importance-sampling">10. Ordinary 与 Weighted Importance Sampling</h2> <p>对同一状态得到 $N$ 个 return $G_i$ 与 ratio $\rho_i$。</p> <h3 id="101-ordinary-is">10.1 Ordinary IS</h3> \[V_{\mathrm{ordinary}}(s) = \frac{1}{N}\sum_{i=1}^{N}\rho_iG_i.\] <p>在 coverage 与可积性条件满足时，它可无偏，但单个极大权重会主导估计，方差甚至可能无穷大。</p> <h3 id="102-weighted--self-normalized-is">10.2 Weighted / self-normalized IS</h3> \[V_{\mathrm{weighted}}(s) = \frac{\sum_{i=1}^{N}\rho_iG_i} {\sum_{i=1}^{N}\rho_i}.\] <p>它有限样本一般有偏，但一致，且常更稳定。如果分母为 0：</p> <ul> <li>不能把估计值写成 0；</li> <li>应返回“当前不可估计”、<code class="language-plaintext highlighter-rouge">NaN</code> 或保留旧估计并发出诊断；</li> <li>必须报告有效样本数与 coverage failure。</li> </ul> <p>若所有 $G_i=c$ 且分母大于 0，weighted IS 必须精确返回 $c$；这是很好的单元测试。</p> <div class="note-tbl"> <table> <thead> <tr> <th>估计器</th> <th>有限样本偏差</th> <th>方差</th> <th>分母为零</th> <th>典型风险</th> </tr> </thead> <tbody> <tr> <td>ordinary IS</td> <td>可无偏</td> <td>很高，可能无穷</td> <td>无自归一化分母</td> <td>极少数轨迹支配均值</td> </tr> <tr> <td>weighted IS</td> <td>通常有偏</td> <td>常较低</td> <td>必须显式处理</td> <td>低有效样本量时仍不可靠</td> </tr> <tr> <td>clipped IS</td> <td>被人为引入偏差</td> <td>可显著降低</td> <td>仍需诊断</td> <td>把稳定错当正确</td> </tr> <tr> <td>per-decision IS</td> <td>依问题而异</td> <td>常低于整轨迹乘积</td> <td>每步仍需 coverage</td> <td>实现上下标易错</td> </tr> </tbody> </table> </div> <h2 id="11-per-decision-importance-sampling">11. Per-decision Importance Sampling</h2> <p>整条 trajectory ratio 把所有未来动作比率乘在整个 return 上。利用 return 的加和结构，可让第 $k$ 个奖励只承担到产生它为止的比率：</p> \[\mathbb E_b\left[ \sum_{k=t}^{T-1} \gamma^{k-t} \rho_{t:k}R_{k+1} \;\middle|\;S_t=s \right],\] <p>其中</p> \[\rho_{t:k} = \prod_{j=t}^{k} \frac{\pi(A_j\mid S_j)} {b(A_j\mid S_j)}.\] <p>早期奖励不再乘上与它因果上无关的更晚动作比率，通常能降低方差。它不是“随意把 trajectory ratio 截短”；推导必须与奖励时序、状态价值/动作价值条件一致。</p> <h2 id="12-数值稳定有效样本量与覆盖诊断">12. 数值稳定、有效样本量与覆盖诊断</h2> <h3 id="121-在-log-空间累计">12.1 在 log 空间累计</h3> <p>长 horizon 下直接连乘会 overflow 或 underflow：</p> \[\log\rho_{t:T-1} = \sum_{k=t}^{T-1} \left[ \log\pi(A_k\mid S_k)-\log b(A_k\mid S_k) \right].\] <p>计算前应检查：</p> <ul> <li>behavior probability 是否严格大于 0；</li> <li>log-prob 是否针对真实采样动作；</li> <li>action transform、mask 和温度是否一致；</li> <li>float dtype 与 exponentiation 范围。</li> </ul> <h3 id="122-effective-sample-size">12.2 Effective sample size</h3> <p>对非负权重 $w_i$，常用：</p> \[\mathrm{ESS} = \frac{\left(\sum_iw_i\right)^2}{\sum_iw_i^2}.\] <p>ESS 接近 1 表示几乎只有一条轨迹在贡献。报告 <code class="language-plaintext highlighter-rouge">N</code> 而不报告 ESS 会掩盖严重权重退化。</p> <h3 id="123-必须同时看的统计量">12.3 必须同时看的统计量</h3> <div class="note-grid"> <div class="note-card"> <h3>覆盖</h3> <p>零 behavior 概率次数、目标动作未出现率、支持集重叠。</p> </div> <div class="note-card"> <h3>权重</h3> <p>median、p90、p99、max、零权重比例、有限值比例。</p> </div> <div class="note-card"> <h3>有效数据</h3> <p>ESS、非零权重 episode 数、每状态/动作的有效访问数。</p> </div> <div class="note-card"> <h3>敏感性</h3> <p>不同 clip 阈值、不同 behavior 模型、不同 horizon 的估计漂移。</p> </div> </div> <p>截断权重、归一化 log-weight 或混合模型估计都可能实用，但必须标注它们改变了统计估计器，不能继续宣称与原始 ordinary IS 具有相同无偏性。</p> <h2 id="13-weighted-off-policy-mc-control">13. Weighted off-policy MC control</h2> <p>当 target policy 是对 $Q$ 的 deterministic greedy policy 时，标准逆序骨架为：</p> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">for</span> <span class="n">each</span> <span class="n">episode</span> <span class="n">generated</span> <span class="n">by</span> <span class="n">behavior</span> <span class="n">b</span><span class="p">:</span>
-    <span class="n">G</span> <span class="o">=</span> <span class="mf">0.0</span>
-    <span class="n">W</span> <span class="o">=</span> <span class="mf">1.0</span>
+<ul>
+  <li>很多状态无法安全或物理上直接初始化；</li>
+  <li>任意初始动作可能造成碰撞；</li>
+  <li>高维连续状态—动作空间无法枚举；</li>
+  <li>reset 分布本身是任务的一部分，不能随意改写。</li>
+</ul>
 
-    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nf">reversed</span><span class="p">(</span><span class="nf">range</span><span class="p">(</span><span class="n">T</span><span class="p">)):</span>
-        <span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">r_next</span> <span class="o">=</span> <span class="n">S</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">A</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">R</span><span class="p">[</span><span class="n">t</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-        <span class="n">G</span> <span class="o">=</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">G</span> <span class="o">+</span> <span class="n">r_next</span>
+<p>因此，exploring starts 应理解为“保证覆盖的理想化条件”，而不是机器人系统的默认实现建议。</p>
 
-        <span class="n">C</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">]</span> <span class="o">+=</span> <span class="n">W</span>
-        <span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">W</span> <span class="o">/</span> <span class="n">C</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">])</span> <span class="o">*</span> <span class="p">(</span><span class="n">G</span> <span class="o">-</span> <span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">])</span>
+<h2 id="8-on-policy-mc-control-与-epsilon-soft-策略">8. On-policy MC control 与 epsilon-soft 策略</h2>
 
-        <span class="n">target_action</span> <span class="o">=</span> <span class="nf">argmax_with_declared_tie_break</span><span class="p">(</span><span class="n">Q</span><span class="p">[</span><span class="n">s</span><span class="p">])</span>
-        <span class="n">pi</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="o">=</span> <span class="n">target_action</span>
+<p>若行为策略就是要优化的目标策略，可让它保持 \(\epsilon\)-soft。对有限离散动作集 \(\mathcal A(s)\)，若唯一 greedy action 为 \(a^\*\)：</p>
 
-        <span class="k">if</span> <span class="n">a</span> <span class="o">!=</span> <span class="n">target_action</span><span class="p">:</span>
-            <span class="k">break</span>
+\[\pi(a\mid s)
+=
+\begin{cases}
+1-\epsilon+\epsilon/|\mathcal A(s)|,&amp;a=a^\*,\\
+\epsilon/|\mathcal A(s)|,&amp;a\ne a^\*.
+\end{cases}\]
 
-        <span class="n">prob</span> <span class="o">=</span> <span class="nf">b</span><span class="p">(</span><span class="n">a</span> <span class="o">|</span> <span class="n">s</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">prob</span> <span class="o">&gt;</span> <span class="mi">0</span>
-        <span class="n">W</span> <span class="o">=</span> <span class="n">W</span> <span class="o">/</span> <span class="n">prob</span>
-</code></pre></div></div> <p>为什么遇到 <code class="language-plaintext highlighter-rouge">a != target_action</code> 就停止？deterministic target 对该动作概率为 0，更早时间步的完整 ratio 因而变成 0。为什么先更新再更新 $W$？当前 $Q(s,a)$ 已条件化当前动作，更新它需要的是后续动作的 ratio。</p> <p><span class="note-badge note-bad">常见错误</span> 先执行 <code class="language-plaintext highlighter-rouge">W /= b(a|s)</code> 再更新当前 $Q(s,a)$，会把当前动作概率重复纳入条件化动作价值的权重。</p> <p>并列最大动作必须有固定、可记录的 tie-breaking；behavior 策略概率必须是当时采样所用的概率，而不是训练后重新计算的新版策略概率。</p> <h2 id="14-terminatedtruncated-与完整-episode">14. Terminated、truncated 与“完整 episode”</h2> <p>MC 的无 bootstrap 特征依赖真正完成的 episodic return。边界语义由<a href="/knowledge/reinforcement-learning/environment-api-time-boundaries/">环境 API、终止截断与时间边界</a>统一定义。</p> <h3 id="141-真终止">14.1 真终止</h3> <p>若 <code class="language-plaintext highlighter-rouge">terminated=True</code>，任务定义在此结束：</p> \[G_{T-1}=R_T\] <p>不接终点之后的价值。</p> <h3 id="142-外部截断">14.2 外部截断</h3> <p>若在 $H$ 时刻因采样器限制 <code class="language-plaintext highlighter-rouge">truncated=True</code>，底层任务仍会继续。只把已观察奖励相加：</p> \[\sum_{k=t}^{H-1}\gamma^{k-t}R_{k+1}\] <p>通常低估余下回报。若使用价值函数补尾：</p> \[\widehat G_t^{\mathrm{partial}} = \sum_{k=t}^{H-1}\gamma^{k-t}R_{k+1} + \gamma^{H-t}\widehat V(o_H^{\mathrm{final}}),\] <p>这是合理的 partial-episode bootstrapping，但不再是纯 MC target。必须使用截断前最后真实观测，不能使用 auto-reset 后新 episode 初始观测。</p> <h3 id="143-没有尾部价值怎么办">14.3 没有尾部价值怎么办</h3> <p>不能默默令尾部为 0。可选择：</p> <ul> <li>延长采样直到自然终止；</li> <li>只在任务确实为有限时域时把时限建模进状态；</li> <li>引入单独价值估计并明确承认 bootstrap；</li> <li>使用有理论说明的截断/删失估计；</li> <li>报告仅保留自然终止 episode 造成的选择偏差。</li> </ul> <div class="note-warn"> <p>“MC 必须等 episode 结束”不等于“任何 reset 都能制造一个合法终点”。reset 是采样操作；terminal 是任务语义。</p> </div> <h2 id="15-continuing-task-怎么办">15. Continuing task 怎么办</h2> <p>没有自然终点的 continuing task 不直接提供有限 episodic return。常见路线包括：</p> <ul> <li>discounted continuing return，配合 TD 或人为窗口与尾部估计；</li> <li>average-reward formulation；</li> <li>找到真正的 regenerative state，把访问周期当自然 episode；</li> <li>固定窗口估计，并显式分析 truncation bias。</li> </ul> <p>把无限任务每 1000 步 reset 一次、然后把最后一步标成 terminal，只是改变数据，不会自动让原任务变成正确的 episodic MDP。</p> <h2 id="16-mc-与-td偏差方差不是唯一差别">16. MC 与 TD：偏差—方差不是唯一差别</h2> <div class="note-tbl"> <table> <thead> <tr> <th>维度</th> <th>Monte Carlo</th> <th>TD(0)</th> </tr> </thead> <tbody> <tr> <td>target</td> <td>实际完整回报 $G_t$</td> <td>$R_{t+1}+\gamma V(S_{t+1})$</td> </tr> <tr> <td>bootstrap</td> <td>纯 MC 不使用</td> <td>使用</td> </tr> <tr> <td>更新时机</td> <td>episode 结束后</td> <td>每一步</td> </tr> <tr> <td>target 偏差</td> <td>完整 on-policy return 样本本身不含 bootstrap 偏差</td> <td>当前估计带来 bootstrap 偏差</td> </tr> <tr> <td>方差</td> <td>通常更高，长时延奖励尤其明显</td> <td>通常较低</td> </tr> <tr> <td>continuing task</td> <td>需额外处理</td> <td>天然可在线更新</td> </tr> <tr> <td>非 Markov 观测</td> <td>return 仍可采样，但价值条件发生混叠</td> <td>同样受混叠影响</td> </tr> <tr> <td>off-policy</td> <td>IS 乘积可极高方差</td> <td>也需校正且可能有致命三元组问题</td> </tr> </tbody> </table> </div> <p>“MC 无偏、TD 有偏”只是简化口号。函数逼近、有限数据、截断、off-policy 权重、策略不断变化都会引入额外误差；比较时要说明估计对象和数据生成过程。</p> <h2 id="17-12-个固定测试">17. 12 个固定测试</h2> <div class="note-tbl"> <table> <thead> <tr> <th>编号</th> <th>测试</th> <th>固定输入</th> <th>必须满足</th> </tr> </thead> <tbody> <tr> <td>M1</td> <td>两步回报</td> <td>rewards=<code class="language-plaintext highlighter-rouge">[1,2]</code>, $\gamma=0.5$</td> <td>returns=<code class="language-plaintext highlighter-rouge">[2,2]</code> </td> </tr> <tr> <td>M2</td> <td>重复状态</td> <td> <code class="language-plaintext highlighter-rouge">A,B,A</code>, returns=<code class="language-plaintext highlighter-rouge">[7,6,4]</code> </td> <td>first 用 7；every 用 7 和 4</td> </tr> <tr> <td>M3</td> <td>$\gamma=0$</td> <td>任意 rewards</td> <td>每个 $G_t=R_{t+1}$</td> </tr> <tr> <td>M4</td> <td>terminal reward</td> <td>最后一步奖励非零</td> <td>不丢最后奖励、不再 bootstrap</td> </tr> <tr> <td>M5</td> <td>truncation 补尾</td> <td>$r=2,\gamma=.9,V(o_H)=10$</td> <td>partial target=11</td> </tr> <tr> <td>M6</td> <td>behavior==target</td> <td>每个已采样动作上均有 $\pi=b$</td> <td>每个 ratio=1</td> </tr> <tr> <td>M7</td> <td>coverage failure</td> <td>$\pi(a\mid s)&gt;0,b(a\mid s)=0$</td> <td>明确报错/不可估计</td> </tr> <tr> <td>M8</td> <td>长 horizon</td> <td>极小/极大概率比连乘</td> <td>log-space 有限并报警</td> </tr> <tr> <td>M9</td> <td>weighted 分母 0</td> <td>所有权重为 0</td> <td>不返回伪造的 0 value</td> </tr> <tr> <td>M10</td> <td>相同 return</td> <td>全部 $G_i=c$、总权重大于 0</td> <td>weighted estimate 精确为 $c$</td> </tr> <tr> <td>M11</td> <td>增量均值</td> <td>固定 return 列表</td> <td>与 batch mean 一致</td> </tr> <tr> <td>M12</td> <td>常数步长</td> <td>均值发生跳变</td> <td>能追踪，且不等于 batch mean</td> </tr> </tbody> </table> </div> <h3 id="171-最小测试伪代码">17.1 最小测试伪代码</h3> <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">test_two_step_return</span><span class="p">():</span>
+<p>若有 \(m\) 个并列 greedy actions，应把 exploitation 部分 \(1-\epsilon\) 在这 \(m\) 个动作间分配，而不是由数组顺序永久偏向第一个。</p>
+
+<h3 id="81-算法骨架">8.1 算法骨架</h3>
+
+<div class="language-text highlighter-rouge"><div class="highlight"><pre class="highlight"><code>initialize Q(s, a), count(s, a)
+initialize epsilon_soft_policy(Q, epsilon)
+
+for episode in range(num_episodes):
+    trajectory = generate_episode(policy)
+    returns = discounted_returns(trajectory.rewards, gamma)
+    seen_pairs = set()
+
+    for t, (s, a) in enumerate(trajectory.state_action_pairs):
+        if (s, a) in seen_pairs:
+            continue
+        seen_pairs.add((s, a))
+
+        count[s, a] += 1
+        Q[s, a] += (returns[t] - Q[s, a]) / count[s, a]
+
+        policy[s] = epsilon_soft_distribution(Q[s], epsilon)
+</code></pre></div></div>
+
+<p>在 tabular 条件下，持续但逐渐减弱的探索可形成 GLIE 思路；固定 \(\epsilon&gt;0\) 则收敛目标是受 \(\epsilon\)-soft 约束的策略，而非完全 deterministic greedy policy。</p>
+
+<div class="note-warn">
+
+  <p>\(\epsilon\)-soft 只保证每个离散动作在已访问状态有非零概率，不保证高维状态空间、稀疏奖励或安全约束下的充分探索。探索的完整设计由后续探索专页负责。</p>
+
+</div>
+
+<h2 id="9-off-policy目标策略与行为策略">9. Off-policy：目标策略与行为策略</h2>
+
+<ul>
+  <li>
+<strong>target policy \(\pi\)</strong>：想评估或优化的策略；</li>
+  <li>
+<strong>behavior policy \(b\)</strong>：实际生成数据的策略。</li>
+</ul>
+
+<p>要从 \(b\) 的轨迹估计 \(\pi\)，必须满足 coverage：</p>
+
+\[\pi(a\mid s)&gt;0 \Longrightarrow b(a\mid s)&gt;0\]
+
+<p>至少要在目标策略可能经过的相关状态—动作上成立。如果目标动作在 behavior 下概率为 0，数据中没有任何权重可以“补出”缺失行动。</p>
+
+<h3 id="91-状态价值的-trajectory-ratio">9.1 状态价值的 trajectory ratio</h3>
+
+<p>估计 \(v_\pi(S_t)\) 时，未来动作序列的比率为：</p>
+
+\[\rho_{t:T-1}
+=
+\prod_{k=t}^{T-1}
+\frac{\pi(A_k\mid S_k)}
+     {b(A_k\mid S_k)}.\]
+
+<p>环境转移概率与奖励分布在分子分母中相消，前提是两种策略面对的是同一个环境机制。</p>
+
+<h3 id="92-动作价值的比率起点">9.2 动作价值的比率起点</h3>
+
+<p>估计 \(q_\pi(S_t,A_t)\) 时已经条件化在当前动作 \(A_t\) 上，标准 continuation ratio 从下一步开始：</p>
+
+\[\rho_{t+1:T-1}
+=
+\prod_{k=t+1}^{T-1}
+\frac{\pi(A_k\mid S_k)}
+     {b(A_k\mid S_k)}.\]
+
+<p>这也是 weighted off-policy MC control 逆序算法在更新当前 \(Q(S_t,A_t)\) <strong>之后</strong>才把当前 behavior 概率除进权重的原因。若某篇资料把乘积从 \(t\) 开始，先确认它估计的是状态价值、联合事件，还是采用了不同归一化；不能只复制上下标。</p>
+
+<h2 id="10-ordinary-与-weighted-importance-sampling">10. Ordinary 与 Weighted Importance Sampling</h2>
+
+<p>对同一状态得到 \(N\) 个 return \(G_i\) 与 ratio \(\rho_i\)。</p>
+
+<h3 id="101-ordinary-is">10.1 Ordinary IS</h3>
+
+\[V_{\mathrm{ordinary}}(s)
+=
+\frac{1}{N}\sum_{i=1}^{N}\rho_iG_i.\]
+
+<p>在 coverage 与可积性条件满足时，它可无偏，但单个极大权重会主导估计，方差甚至可能无穷大。</p>
+
+<h3 id="102-weighted--self-normalized-is">10.2 Weighted / self-normalized IS</h3>
+
+\[V_{\mathrm{weighted}}(s)
+=
+\frac{\sum_{i=1}^{N}\rho_iG_i}
+     {\sum_{i=1}^{N}\rho_i}.\]
+
+<p>它有限样本一般有偏，但一致，且常更稳定。如果分母为 0：</p>
+
+<ul>
+  <li>不能把估计值写成 0；</li>
+  <li>应返回“当前不可估计”、<code class="language-plaintext highlighter-rouge">NaN</code> 或保留旧估计并发出诊断；</li>
+  <li>必须报告有效样本数与 coverage failure。</li>
+</ul>
+
+<p>若所有 \(G_i=c\) 且分母大于 0，weighted IS 必须精确返回 \(c\)；这是很好的单元测试。</p>
+
+<div class="note-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>估计器</th>
+        <th>有限样本偏差</th>
+        <th>方差</th>
+        <th>分母为零</th>
+        <th>典型风险</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>ordinary IS</td>
+        <td>可无偏</td>
+        <td>很高，可能无穷</td>
+        <td>无自归一化分母</td>
+        <td>极少数轨迹支配均值</td>
+      </tr>
+      <tr>
+        <td>weighted IS</td>
+        <td>通常有偏</td>
+        <td>常较低</td>
+        <td>必须显式处理</td>
+        <td>低有效样本量时仍不可靠</td>
+      </tr>
+      <tr>
+        <td>clipped IS</td>
+        <td>被人为引入偏差</td>
+        <td>可显著降低</td>
+        <td>仍需诊断</td>
+        <td>把稳定错当正确</td>
+      </tr>
+      <tr>
+        <td>per-decision IS</td>
+        <td>依问题而异</td>
+        <td>常低于整轨迹乘积</td>
+        <td>每步仍需 coverage</td>
+        <td>实现上下标易错</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h2 id="11-per-decision-importance-sampling">11. Per-decision Importance Sampling</h2>
+
+<p>整条 trajectory ratio 把所有未来动作比率乘在整个 return 上。利用 return 的加和结构，可让第 \(k\) 个奖励只承担到产生它为止的比率：</p>
+
+\[\mathbb E_b\left[
+\sum_{k=t}^{T-1}
+\gamma^{k-t}
+\rho_{t:k}R_{k+1}
+\;\middle|\;S_t=s
+\right],\]
+
+<p>其中</p>
+
+\[\rho_{t:k}
+=
+\prod_{j=t}^{k}
+\frac{\pi(A_j\mid S_j)}
+     {b(A_j\mid S_j)}.\]
+
+<p>早期奖励不再乘上与它因果上无关的更晚动作比率，通常能降低方差。它不是“随意把 trajectory ratio 截短”；推导必须与奖励时序、状态价值/动作价值条件一致。</p>
+
+<h2 id="12-数值稳定有效样本量与覆盖诊断">12. 数值稳定、有效样本量与覆盖诊断</h2>
+
+<h3 id="121-在-log-空间累计">12.1 在 log 空间累计</h3>
+
+<p>长 horizon 下直接连乘会 overflow 或 underflow：</p>
+
+\[\log\rho_{t:T-1}
+=
+\sum_{k=t}^{T-1}
+\left[
+\log\pi(A_k\mid S_k)-\log b(A_k\mid S_k)
+\right].\]
+
+<p>计算前应检查：</p>
+
+<ul>
+  <li>behavior probability 是否严格大于 0；</li>
+  <li>log-prob 是否针对真实采样动作；</li>
+  <li>action transform、mask 和温度是否一致；</li>
+  <li>float dtype 与 exponentiation 范围。</li>
+</ul>
+
+<h3 id="122-effective-sample-size">12.2 Effective sample size</h3>
+
+<p>对非负权重 \(w_i\)，常用：</p>
+
+\[\mathrm{ESS}
+=
+\frac{\left(\sum_iw_i\right)^2}{\sum_iw_i^2}.\]
+
+<p>ESS 接近 1 表示几乎只有一条轨迹在贡献。报告 <code class="language-plaintext highlighter-rouge">N</code> 而不报告 ESS 会掩盖严重权重退化。</p>
+
+<h3 id="123-必须同时看的统计量">12.3 必须同时看的统计量</h3>
+
+<div class="note-grid">
+  <div class="note-card">
+<h3 id="rl-raw-heading-004">覆盖</h3>
+<p>零 behavior 概率次数、目标动作未出现率、支持集重叠。</p>
+</div>
+  <div class="note-card">
+<h3 id="rl-raw-heading-005">权重</h3>
+<p>median、p90、p99、max、零权重比例、有限值比例。</p>
+</div>
+  <div class="note-card">
+<h3 id="rl-raw-heading-006">有效数据</h3>
+<p>ESS、非零权重 episode 数、每状态/动作的有效访问数。</p>
+</div>
+  <div class="note-card">
+<h3 id="rl-raw-heading-007">敏感性</h3>
+<p>不同 clip 阈值、不同 behavior 模型、不同 horizon 的估计漂移。</p>
+</div>
+</div>
+
+<p>截断权重、归一化 log-weight 或混合模型估计都可能实用，但必须标注它们改变了统计估计器，不能继续宣称与原始 ordinary IS 具有相同无偏性。</p>
+
+<h2 id="13-weighted-off-policy-mc-control">13. Weighted off-policy MC control</h2>
+
+<p>当 target policy 是对 \(Q\) 的 deterministic greedy policy 时，标准逆序骨架为：</p>
+
+<div class="language-text highlighter-rouge"><div class="highlight"><pre class="highlight"><code>for each episode generated by behavior b:
+    G = 0.0
+    W = 1.0
+
+    for t in reversed(range(T)):
+        s, a, r_next = S[t], A[t], R[t + 1]
+        G = gamma * G + r_next
+
+        C[s, a] += W
+        Q[s, a] += (W / C[s, a]) * (G - Q[s, a])
+
+        target_action = argmax_with_declared_tie_break(Q[s])
+        pi[s] = target_action
+
+        if a != target_action:
+            break
+
+        prob = b(a | s)
+        assert prob &gt; 0
+        W = W / prob
+</code></pre></div></div>
+
+<p>为什么遇到 <code class="language-plaintext highlighter-rouge">a != target_action</code> 就停止？deterministic target 对该动作概率为 0，更早时间步的完整 ratio 因而变成 0。为什么先更新再更新 \(W\)？当前 \(Q(s,a)\) 已条件化当前动作，更新它需要的是后续动作的 ratio。</p>
+
+<p><span class="note-badge note-bad">常见错误</span> 先执行 <code class="language-plaintext highlighter-rouge">W /= b(a|s)</code> 再更新当前 \(Q(s,a)\)，会把当前动作概率重复纳入条件化动作价值的权重。</p>
+
+<p>并列最大动作必须有固定、可记录的 tie-breaking；behavior 策略概率必须是当时采样所用的概率，而不是训练后重新计算的新版策略概率。</p>
+
+<h2 id="14-terminatedtruncated-与完整-episode">14. Terminated、truncated 与“完整 episode”</h2>
+
+<p>MC 的无 bootstrap 特征依赖真正完成的 episodic return。边界语义由<a href="/knowledge/reinforcement-learning/environment-api-time-boundaries/">环境 API、终止截断与时间边界</a>统一定义。</p>
+
+<h3 id="141-真终止">14.1 真终止</h3>
+
+<p>若 <code class="language-plaintext highlighter-rouge">terminated=True</code>，任务定义在此结束：</p>
+
+\[G_{T-1}=R_T\]
+
+<p>不接终点之后的价值。</p>
+
+<h3 id="142-外部截断">14.2 外部截断</h3>
+
+<p>若在 \(H\) 时刻因采样器限制 <code class="language-plaintext highlighter-rouge">truncated=True</code>，底层任务仍会继续。只把已观察奖励相加：</p>
+
+\[\sum_{k=t}^{H-1}\gamma^{k-t}R_{k+1}\]
+
+<p>通常低估余下回报。若使用价值函数补尾：</p>
+
+\[\widehat G_t^{\mathrm{partial}}
+=
+\sum_{k=t}^{H-1}\gamma^{k-t}R_{k+1}
++
+\gamma^{H-t}\widehat V(o_H^{\mathrm{final}}),\]
+
+<p>这是合理的 partial-episode bootstrapping，但不再是纯 MC target。必须使用截断前最后真实观测，不能使用 auto-reset 后新 episode 初始观测。</p>
+
+<h3 id="143-没有尾部价值怎么办">14.3 没有尾部价值怎么办</h3>
+
+<p>不能默默令尾部为 0。可选择：</p>
+
+<ul>
+  <li>延长采样直到自然终止；</li>
+  <li>只在任务确实为有限时域时把时限建模进状态；</li>
+  <li>引入单独价值估计并明确承认 bootstrap；</li>
+  <li>使用有理论说明的截断/删失估计；</li>
+  <li>报告仅保留自然终止 episode 造成的选择偏差。</li>
+</ul>
+
+<div class="note-warn">
+
+  <p>“MC 必须等 episode 结束”不等于“任何 reset 都能制造一个合法终点”。reset 是采样操作；terminal 是任务语义。</p>
+
+</div>
+
+<h2 id="15-continuing-task-怎么办">15. Continuing task 怎么办</h2>
+
+<p>没有自然终点的 continuing task 不直接提供有限 episodic return。常见路线包括：</p>
+
+<ul>
+  <li>discounted continuing return，配合 TD 或人为窗口与尾部估计；</li>
+  <li>average-reward formulation；</li>
+  <li>找到真正的 regenerative state，把访问周期当自然 episode；</li>
+  <li>固定窗口估计，并显式分析 truncation bias。</li>
+</ul>
+
+<p>把无限任务每 1000 步 reset 一次、然后把最后一步标成 terminal，只是改变数据，不会自动让原任务变成正确的 episodic MDP。</p>
+
+<h2 id="16-mc-与-td偏差方差不是唯一差别">16. MC 与 TD：偏差—方差不是唯一差别</h2>
+
+<div class="note-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>维度</th>
+        <th>Monte Carlo</th>
+        <th>TD(0)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>target</td>
+        <td>实际完整回报 \(G_t\)</td>
+        <td>\(R_{t+1}+\gamma V(S_{t+1})\)</td>
+      </tr>
+      <tr>
+        <td>bootstrap</td>
+        <td>纯 MC 不使用</td>
+        <td>使用</td>
+      </tr>
+      <tr>
+        <td>更新时机</td>
+        <td>episode 结束后</td>
+        <td>每一步</td>
+      </tr>
+      <tr>
+        <td>target 偏差</td>
+        <td>完整 on-policy return 样本本身不含 bootstrap 偏差</td>
+        <td>当前估计带来 bootstrap 偏差</td>
+      </tr>
+      <tr>
+        <td>方差</td>
+        <td>通常更高，长时延奖励尤其明显</td>
+        <td>通常较低</td>
+      </tr>
+      <tr>
+        <td>continuing task</td>
+        <td>需额外处理</td>
+        <td>天然可在线更新</td>
+      </tr>
+      <tr>
+        <td>非 Markov 观测</td>
+        <td>return 仍可采样，但价值条件发生混叠</td>
+        <td>同样受混叠影响</td>
+      </tr>
+      <tr>
+        <td>off-policy</td>
+        <td>IS 乘积可极高方差</td>
+        <td>也需校正且可能有致命三元组问题</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<p>“MC 无偏、TD 有偏”只是简化口号。函数逼近、有限数据、截断、off-policy 权重、策略不断变化都会引入额外误差；比较时要说明估计对象和数据生成过程。</p>
+
+<h2 id="17-12-个固定测试">17. 12 个固定测试</h2>
+
+<div class="note-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>编号</th>
+        <th>测试</th>
+        <th>固定输入</th>
+        <th>必须满足</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>M1</td>
+        <td>两步回报</td>
+        <td>rewards=<code class="language-plaintext highlighter-rouge">[1,2]</code>, \(\gamma=0.5\)</td>
+        <td>returns=<code class="language-plaintext highlighter-rouge">[2,2]</code>
+</td>
+      </tr>
+      <tr>
+        <td>M2</td>
+        <td>重复状态</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">A,B,A</code>, returns=<code class="language-plaintext highlighter-rouge">[7,6,4]</code>
+</td>
+        <td>first 用 7；every 用 7 和 4</td>
+      </tr>
+      <tr>
+        <td>M3</td>
+        <td>\(\gamma=0\)</td>
+        <td>任意 rewards</td>
+        <td>每个 \(G_t=R_{t+1}\)</td>
+      </tr>
+      <tr>
+        <td>M4</td>
+        <td>terminal reward</td>
+        <td>最后一步奖励非零</td>
+        <td>不丢最后奖励、不再 bootstrap</td>
+      </tr>
+      <tr>
+        <td>M5</td>
+        <td>truncation 补尾</td>
+        <td>\(r=2,\gamma=.9,V(o_H)=10\)</td>
+        <td>partial target=11</td>
+      </tr>
+      <tr>
+        <td>M6</td>
+        <td>behavior==target</td>
+        <td>每个已采样动作上均有 \(\pi=b\)</td>
+        <td>每个 ratio=1</td>
+      </tr>
+      <tr>
+        <td>M7</td>
+        <td>coverage failure</td>
+        <td>\(\pi(a\mid s)&gt;0,b(a\mid s)=0\)</td>
+        <td>明确报错/不可估计</td>
+      </tr>
+      <tr>
+        <td>M8</td>
+        <td>长 horizon</td>
+        <td>极小/极大概率比连乘</td>
+        <td>log-space 有限并报警</td>
+      </tr>
+      <tr>
+        <td>M9</td>
+        <td>weighted 分母 0</td>
+        <td>所有权重为 0</td>
+        <td>不返回伪造的 0 value</td>
+      </tr>
+      <tr>
+        <td>M10</td>
+        <td>相同 return</td>
+        <td>全部 \(G_i=c\)、总权重大于 0</td>
+        <td>weighted estimate 精确为 \(c\)</td>
+      </tr>
+      <tr>
+        <td>M11</td>
+        <td>增量均值</td>
+        <td>固定 return 列表</td>
+        <td>与 batch mean 一致</td>
+      </tr>
+      <tr>
+        <td>M12</td>
+        <td>常数步长</td>
+        <td>均值发生跳变</td>
+        <td>能追踪，且不等于 batch mean</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<h3 id="171-最小测试伪代码">17.1 最小测试伪代码</h3>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">def</span> <span class="nf">test_two_step_return</span><span class="p">():</span>
     <span class="k">assert</span> <span class="nf">discounted_returns</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span> <span class="o">==</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]</span>
 
 <span class="k">def</span> <span class="nf">test_first_visit_is_not_last_visit</span><span class="p">():</span>
@@ -290,20 +2982,290 @@
 
 <span class="k">def</span> <span class="nf">test_coverage_failure_is_explicit</span><span class="p">():</span>
     <span class="k">assert</span> <span class="nf">raises_coverage_error</span><span class="p">(</span><span class="n">target_prob</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">behavior_prob</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
-</code></pre></div></div> <h2 id="18-常见错误与定位">18. 常见错误与定位</h2> <div class="note-tbl"> <table> <thead> <tr> <th>现象</th> <th>常见根因</th> <th>优先检查</th> </tr> </thead> <tbody> <tr> <td>first-visit 结果像 last-visit</td> <td>逆序循环直接用 <code class="language-plaintext highlighter-rouge">seen</code> </td> <td>是否先算 return、再正序判首次</td> </tr> <tr> <td>return 全部偏一位</td> <td>$R_t/R_{t+1}$ 混用</td> <td>轨迹数据结构与两步手算</td> </tr> <tr> <td>MC 值系统性偏低</td> <td>truncation 当 terminal</td> <td> <code class="language-plaintext highlighter-rouge">terminated</code> / <code class="language-plaintext highlighter-rouge">truncated</code> 与尾部价值</td> </tr> <tr> <td>off-policy 值偶发爆炸</td> <td>长 ratio product</td> <td>log-weight、p99/max、ESS</td> </tr> <tr> <td>weighted IS 总给 0</td> <td>分母 0 被默认替换</td> <td>不可估计分支与 coverage</td> </tr> <tr> <td>Q 的权重多乘一项</td> <td>当前动作重复进入 ratio</td> <td>ratio 起点与更新 $W$ 的顺序</td> </tr> <tr> <td>策略只选动作 0</td> <td>argmax tie 固定偏置</td> <td>初始化、随机 tie-breaking</td> </tr> <tr> <td>训练数据很多但估计不稳</td> <td>名义 $N$ 大、ESS 极小</td> <td>权重分布与支持集重叠</td> </tr> <tr> <td>固定 $\epsilon$ 后仍未 greedy</td> <td>优化对象理解错误</td> <td>是否声明 epsilon-soft 约束</td> </tr> <tr> <td>只保留成功 episode</td> <td>选择偏差</td> <td>采样过滤规则与失败轨迹</td> </tr> </tbody> </table> </div> <div class="note-debug"> <p><strong>调试顺序</strong>：先手算一条短 episode → 验证奖励下标 → 验证 visit 选择 → 验证增量均值 → 再开启策略改进 → 最后加入 importance sampling。不要在基础 return 还没过测试时调 $\epsilon$ 或 clip ratio。</p> </div> <h2 id="19-与其他页面的职责边界">19. 与其他页面的职责边界</h2> <ul> <li> <a href="/knowledge/reinforcement-learning/intro/">多臂老虎机</a>：解释无状态动作价值的样本均值与探索；</li> <li> <a href="/knowledge/reinforcement-learning/dynamic-programming/">动态规划</a>：保留已知模型下的 exact expectation 与 GPI；</li> <li>本页：负责完整 episodic return、MC prediction/control 与 IS 基础；</li> <li> <a href="/knowledge/reinforcement-learning/temporal-difference/">时序差分</a>：负责 bootstrap、Sarsa 与 Q-learning；</li> <li> <a href="/knowledge/reinforcement-learning/policy-gradient/">策略梯度</a>：REINFORCE 使用 return，但梯度目标不等于 tabular MC control；</li> <li> <a href="/knowledge/reinforcement-learning/offline-rl/">离线强化学习</a>：固定数据、分布偏移与 OPE 只保留摘要，并回链本页的 IS 基础；</li> <li> <a href="/knowledge/reinforcement-learning/environment-api-time-boundaries/">环境时间边界</a>：统一 terminal、truncation、auto-reset 与 bootstrap mask。</li> </ul> <p>推荐主线：</p> <pre><code class="language-mermaid">flowchart LR
-  BANDIT["Bandit&lt;br/&gt;样本均值"] --&gt; MDP["MDP&lt;br/&gt;return 与价值"]
-  MDP --&gt; DP["DP&lt;br/&gt;模型期望"]
-  DP --&gt; MC["MC&lt;br/&gt;完整经验"]
-  MC --&gt; TD["TD&lt;br/&gt;经验 + bootstrap"]
-  MC --&gt; PG["REINFORCE&lt;br/&gt;return 加权梯度"]
-  MC --&gt; OPE["Off-policy / OPE&lt;br/&gt;IS 与覆盖"]
-</code></pre> <h2 id="20-练习">20. 练习</h2> <ol> <li>手算一条含重复状态的 episode，分别列出 first-visit、every-visit 与错误 last-visit 更新。</li> <li>构造 behavior 与 target 只有一个时间步概率不同的例子，验证 ordinary 与 weighted IS。</li> <li>让 horizon 从 10 增至 100，画出 log-ratio、ratio、ESS 与估计误差。</li> <li>对同一外部截断数据，比较“尾部置 0”和“用准确 $V(o_H)$ 补尾”的偏差。</li> <li>在随机游走任务中对齐样本量，比较 MC 与 TD(0) 的 RMSE，不只比较训练 episode 数。</li> </ol> <h2 id="21-主要来源">21. 主要来源</h2> <ol> <li> <a href="http://incompleteideas.net/book/the-book-2nd.html" rel="external nofollow noopener" target="_blank">Sutton &amp; Barto, Reinforcement Learning: An Introduction, 2nd ed.</a>——第 5 章 Monte Carlo methods，以及第 7 章 n-step 与 MC/TD 关系。</li> <li> <a href="https://web.eecs.umich.edu/~baveja/Papers/OffPolicy.pdf" rel="external nofollow noopener" target="_blank">Precup, Sutton &amp; Singh, Eligibility Traces for Off-Policy Policy Evaluation</a>——off-policy correction 与 eligibility traces 的经典来源。</li> <li> <a href="https://proceedings.mlr.press/v48/thomasa16.html" rel="external nofollow noopener" target="_blank">Thomas &amp; Brunskill, Data-Efficient Off-Policy Policy Evaluation, ICML 2016</a>——重要性采样、doubly robust 与模型估计组合的 OPE 进阶背景。</li> <li> <a href="https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/" rel="external nofollow noopener" target="_blank">Gymnasium：Handling Time Limits</a>——外部截断不应默认关闭 bootstrap 的 API 依据。</li> </ol> <div class="note-rule"> <p>本页的 ordinary/weighted IS 公式用于建立基础。实际高风险 OPE 还需要置信区间、行为策略记录/估计误差、模型辅助估计、超参数选择隔离与独立评估协议；不能用一条 point estimate 直接授权部署。</p> </div> </article> </div> </div> </div> </div> <footer class="fixed-bottom" role="contentinfo"> <div class="container mt-0"> © Copyright 2026 DDS . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>. </div> </footer> <script>
+</code></pre></div></div>
+
+<h2 id="18-常见错误与定位">18. 常见错误与定位</h2>
+
+<div class="note-tbl">
+
+  <table>
+    <thead>
+      <tr>
+        <th>现象</th>
+        <th>常见根因</th>
+        <th>优先检查</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>first-visit 结果像 last-visit</td>
+        <td>逆序循环直接用 <code class="language-plaintext highlighter-rouge">seen</code>
+</td>
+        <td>是否先算 return、再正序判首次</td>
+      </tr>
+      <tr>
+        <td>return 全部偏一位</td>
+        <td>\(R_t/R_{t+1}\) 混用</td>
+        <td>轨迹数据结构与两步手算</td>
+      </tr>
+      <tr>
+        <td>MC 值系统性偏低</td>
+        <td>truncation 当 terminal</td>
+        <td>
+<code class="language-plaintext highlighter-rouge">terminated</code> / <code class="language-plaintext highlighter-rouge">truncated</code> 与尾部价值</td>
+      </tr>
+      <tr>
+        <td>off-policy 值偶发爆炸</td>
+        <td>长 ratio product</td>
+        <td>log-weight、p99/max、ESS</td>
+      </tr>
+      <tr>
+        <td>weighted IS 总给 0</td>
+        <td>分母 0 被默认替换</td>
+        <td>不可估计分支与 coverage</td>
+      </tr>
+      <tr>
+        <td>Q 的权重多乘一项</td>
+        <td>当前动作重复进入 ratio</td>
+        <td>ratio 起点与更新 \(W\) 的顺序</td>
+      </tr>
+      <tr>
+        <td>策略只选动作 0</td>
+        <td>argmax tie 固定偏置</td>
+        <td>初始化、随机 tie-breaking</td>
+      </tr>
+      <tr>
+        <td>训练数据很多但估计不稳</td>
+        <td>名义 \(N\) 大、ESS 极小</td>
+        <td>权重分布与支持集重叠</td>
+      </tr>
+      <tr>
+        <td>固定 \(\epsilon\) 后仍未 greedy</td>
+        <td>优化对象理解错误</td>
+        <td>是否声明 epsilon-soft 约束</td>
+      </tr>
+      <tr>
+        <td>只保留成功 episode</td>
+        <td>选择偏差</td>
+        <td>采样过滤规则与失败轨迹</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+<div class="note-debug">
+
+  <p><strong>调试顺序</strong>：先手算一条短 episode → 验证奖励下标 → 验证 visit 选择 → 验证增量均值 → 再开启策略改进 → 最后加入 importance sampling。不要在基础 return 还没过测试时调 \(\epsilon\) 或 clip ratio。</p>
+
+</div>
+
+<h2 id="19-与其他页面的职责边界">19. 与其他页面的职责边界</h2>
+
+<ul>
+  <li>
+<a href="/knowledge/reinforcement-learning/intro/">多臂老虎机</a>：解释无状态动作价值的样本均值与探索；</li>
+  <li>
+<a href="/knowledge/reinforcement-learning/dynamic-programming/">动态规划</a>：保留已知模型下的 exact expectation 与 GPI；</li>
+  <li>本页：负责完整 episodic return、MC prediction/control 与 IS 基础；</li>
+  <li>
+<a href="/knowledge/reinforcement-learning/temporal-difference/">时序差分</a>：负责 bootstrap、Sarsa 与 Q-learning；</li>
+  <li>
+<a href="/knowledge/reinforcement-learning/policy-gradient/">策略梯度</a>：REINFORCE 使用 return，但梯度目标不等于 tabular MC control；</li>
+  <li>
+<a href="/knowledge/reinforcement-learning/offline-rl/">离线强化学习</a>：固定数据、分布偏移与 OPE 只保留摘要，并回链本页的 IS 基础；</li>
+  <li>
+<a href="/knowledge/reinforcement-learning/environment-api-time-boundaries/">环境时间边界</a>：统一 terminal、truncation、auto-reset 与 bootstrap mask。</li>
+</ul>
+
+<p>推荐主线：</p>
+
+<pre><code class="language-mermaid">flowchart LR
+  H_BANDIT["Bandit&lt;br/&gt;样本均值"] --&gt; H_MDP["MDP&lt;br/&gt;return 与价值"]
+  H_MDP --&gt; H_DP["DP&lt;br/&gt;模型期望"]
+  H_DP --&gt; H_MC["MC&lt;br/&gt;完整经验"]
+  H_MC --&gt; H_TD["TD&lt;br/&gt;经验 + bootstrap"]
+  H_MC --&gt; H_PG["REINFORCE&lt;br/&gt;return 加权梯度"]
+  H_MC --&gt; H_OPE["Off-policy / OPE&lt;br/&gt;IS 与覆盖"]
+</code></pre>
+
+<h2 id="20-练习">20. 练习</h2>
+
+<ol>
+  <li>手算一条含重复状态的 episode，分别列出 first-visit、every-visit 与错误 last-visit 更新。</li>
+  <li>构造 behavior 与 target 只有一个时间步概率不同的例子，验证 ordinary 与 weighted IS。</li>
+  <li>让 horizon 从 10 增至 100，画出 log-ratio、ratio、ESS 与估计误差。</li>
+  <li>对同一外部截断数据，比较“尾部置 0”和“用准确 \(V(o_H)\) 补尾”的偏差。</li>
+  <li>在随机游走任务中对齐样本量，比较 MC 与 TD(0) 的 RMSE，不只比较训练 episode 数。</li>
+</ol>
+
+<h2 id="21-主要来源">21. 主要来源</h2>
+
+<ol>
+  <li>
+<a href="http://incompleteideas.net/book/the-book-2nd.html" rel="external nofollow noopener" target="_blank">Sutton &amp; Barto, Reinforcement Learning: An Introduction, 2nd ed.</a>——第 5 章 Monte Carlo methods，以及第 7 章 n-step 与 MC/TD 关系。</li>
+  <li>
+<a href="https://web.eecs.umich.edu/~baveja/Papers/OffPolicy.pdf" rel="external nofollow noopener" target="_blank">Precup, Sutton &amp; Singh, Eligibility Traces for Off-Policy Policy Evaluation</a>——off-policy correction 与 eligibility traces 的经典来源。</li>
+  <li>
+<a href="https://proceedings.mlr.press/v48/thomasa16.html" rel="external nofollow noopener" target="_blank">Thomas &amp; Brunskill, Data-Efficient Off-Policy Policy Evaluation, ICML 2016</a>——重要性采样、doubly robust 与模型估计组合的 OPE 进阶背景。</li>
+  <li>
+<a href="https://gymnasium.farama.org/tutorials/gymnasium_basics/handling_time_limits/" rel="external nofollow noopener" target="_blank">Gymnasium：Handling Time Limits</a>——外部截断不应默认关闭 bootstrap 的 API 依据。</li>
+</ol>
+
+<div class="note-rule">
+
+  <p>本页的 ordinary/weighted IS 公式用于建立基础。实际高风险 OPE 还需要置信区间、行为策略记录/估计误差、模型辅助估计、超参数选择隔离与独立评估协议；不能用一条 point estimate 直接授权部署。</p>
+
+</div>
+
+
+  </article>
+
+  
+
+  
+    
+
+
+  
+</div>
+</div>
+          </div>
+        
+      
+    </div>
+
+    <!-- Footer -->
+    
+
+
+  <footer class="fixed-bottom" role="contentinfo">
+    <div class="container mt-0">
+      
+  © Copyright 2026
+  DDS
+  
+  . Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>. Photos from <a href="https://unsplash.com" target="_blank" rel="external nofollow noopener">Unsplash</a>.
+
+  
+  
+
+    </div>
+  </footer>
+
+
+
+    <!-- JavaScripts -->
+    <script>
   window.alFolio = {
     compatBootstrap: false
   };
-</script> <script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script> <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script> <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script> <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.7.0/dist/mermaid.min.js" integrity="sha256-TtLOdUA8mstPoO6sGvHIGx2ceXrrX4KgIItO06XOn8A=" crossorigin="anonymous"></script> <script defer src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js" integrity="sha256-1rA678n2xEx7x4cTZ5x4wpUCj6kUMZEZ5cxLSVSFWxw=" crossorigin="anonymous"></script> <script defer src="/assets/al_charts/js/mermaid-setup.js" type="text/javascript"></script> <script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script> <script src="/assets/al_math/js/mathjax-setup.js"></script> <script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script> <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script> <script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script> <script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script> <script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script> <script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script> <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script> <script async src="https://badge.dimensions.ai/badge.js"></script> <script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script> <script defer src="/assets/al_img_tools/js/zoom.js"></script> <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script> <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script> <script>
+</script>
+
+<!-- Core navigation/runtime scripts -->
+<script src="/assets/js/nav-toggle.js?v=141bd79a73ebc0f0b6ea58e440ae79fc"></script>
+
+
+
+  <!-- Masonry & imagesLoaded -->
+  <script defer src="https://cdn.jsdelivr.net/npm/masonry-layout@4.2.2/dist/masonry.pkgd.min.js" integrity="sha256-Nn1q/fx0H7SNLZMQ5Hw5JLaTRZp0yILA/FRexe19VdI=" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/imagesloaded@5.0.0/imagesloaded.pkgd.min.js" integrity="sha256-htrLFfZJ6v5udOG+3kNLINIKh2gvoKqwEhHYfTTMICc=" crossorigin="anonymous"></script>
+  <script defer src="/assets/js/masonry.js?v=e49affc7bd2646f6acdad1dbe02c2359" type="text/javascript"></script>
+
+
+
+  <!-- Charts and Diagrams -->
+  
+<script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.7.0/dist/mermaid.min.js" integrity="sha256-TtLOdUA8mstPoO6sGvHIGx2ceXrrX4KgIItO06XOn8A=" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js" integrity="sha256-1rA678n2xEx7x4cTZ5x4wpUCj6kUMZEZ5cxLSVSFWxw=" crossorigin="anonymous"></script>
+<script defer src="/assets/al_charts/js/mermaid-setup.js" type="text/javascript"></script>
+
+
+
+
+
+
+  <!-- Math and Tikzjax -->
+  
+<script defer type="text/javascript" id="MathJax-script" src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" integrity="sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI=" crossorigin="anonymous"></script>
+<script src="/assets/al_math/js/mathjax-setup.js"></script>
+
+
+
+
+
+<!-- Tooltips & popovers runtime -->
+<script src="/assets/js/tooltips-setup.js?v=fe487e99db6c43751e6e7bdb2d6a0611"></script>
+
+
+
+
+
+  <!-- Tocbot -->
+  <script defer src="https://cdn.jsdelivr.net/npm/tocbot@4.36.4/dist/tocbot.min.js" integrity="sha256-lo/r+jQ81wWrxdIiiiEEd538z4+dTJTt+leOuAS7GCw=" crossorigin="anonymous"></script>
+
+
+<!-- Load Common JS -->
+<script src="/assets/js/no_defer.js?v=53b1b1a645525975c963ce8bf8bfefcf"></script>
+<script defer src="/assets/js/common.js?v=87baac90f765f2f3362dcf6aaf312a8a"></script>
+<script defer src="/assets/js/copy_code.js?v=c8a01c11a92744d44b093fc3bda915df" type="text/javascript"></script>
+
+<!-- Jupyter Open External Links New Tab -->
+<script defer src="/assets/js/jupyter_new_tab.js?v=896d254890d9b47f0281f63bfccf0dee"></script>
+
+<!-- Badges -->
+
+  <script async src="https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js"></script>
+
+
+  <script async src="https://badge.dimensions.ai/badge.js"></script>
+
+
+
+
+  <!-- Analytics -->
+  
+
+
+
+
+
+  <!-- Image Features -->
+  
+<!-- Medium Zoom JS -->
+<script defer src="https://cdn.jsdelivr.net/npm/medium-zoom@1.1.0/dist/medium-zoom.min.js" integrity="sha256-ZgMyDAIYDYGxbcpJcfUnYwNevG/xi9OHKaR/8GK+jWc=" crossorigin="anonymous"></script>
+<script defer src="/assets/al_img_tools/js/zoom.js"></script>
+
+
+
+
+
+  <!-- Scrolling Progress Bar -->
+  <script defer src="/assets/js/progress-bar.js?v=499464c5c63ced6cf7ad62509f1e2610" type="text/javascript"></script>
+
+
+
+
+
+  <!-- Back to Top -->
+  
+  
+  
+    <script src="https://cdn.jsdelivr.net/npm/vanilla-back-to-top@7.2.1/dist/vanilla-back-to-top.min.js" integrity="sha256-uMJJ3EoTyfRBoTbR+lrfu1uRQ87RZG8AR3cVNuQVeFg=" crossorigin="anonymous"></script>
+  
+  <script>
     addBackToTop();
-  </script> <script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script> <ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys> <script src="/assets/al_search/js/search-setup.js"></script> <script>
+  </script>
+
+
+
+  <!-- Search -->
+  
+    
+<script type="module" src="/assets/al_search/js/search/ninja-keys.min.js"></script>
+<ninja-keys hidebreadcrumbs noautoloadmdicons placeholder="Type to start searching"></ninja-keys>
+<script src="/assets/al_search/js/search-setup.js"></script>
+<script>
 // get the ninja-keys element
 const ninja = document.querySelector('ninja-keys');
 
@@ -799,7 +3761,7 @@ ninja.data = [{
         title: 'email',
         section: 'Socials',
         handler: () => {
-          window.open("mailto:%79%6F%75@%65%78%61%6D%70%6C%65.%63%6F%6D", "_blank");
+          window.open("#", "_blank");
         },
       },{
         id: 'social-inspire',
@@ -857,4 +3819,14 @@ ninja.data = [{
       },
     },];
 
-</script> <script src="/assets/al_search/js/shortcut-key.js"></script> </body> </html>
+</script>
+<script src="/assets/al_search/js/shortcut-key.js"></script>
+
+
+  
+
+
+
+
+  </body>
+</html>
